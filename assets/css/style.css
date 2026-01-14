@@ -1,0 +1,228 @@
+/* Arabic RTL Support and Custom Styling */
+
+:root {
+    --pink-primary: #ff6b9d;
+    --pink-light: #ffb3d1;
+    --pink-dark: #e91e63;
+    --pink-lighter: #ffe6f0;
+    --white: #ffffff;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    direction: rtl;
+    text-align: right;
+    background-color: #fafafa;
+}
+
+/* Navbar adjustments for RTL - Pink Theme */
+.navbar {
+    min-height: 40px;
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
+    background: linear-gradient(135deg, var(--pink-primary) 0%, var(--pink-dark) 100%) !important;
+    box-shadow: 0 2px 4px rgba(233, 30, 99, 0.2);
+}
+
+.navbar-nav {
+    margin-right: 0 !important;
+    margin-left: auto;
+}
+
+.navbar-nav .nav-link {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.95) !important;
+    transition: all 0.3s;
+}
+
+.navbar-nav .nav-link:hover,
+.navbar-nav .nav-link.active {
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    color: var(--white) !important;
+}
+
+.navbar-nav .nav-link i {
+    font-size: 0.85rem;
+    margin-left: 4px;
+}
+
+/* Logo styling - Smaller */
+.navbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.15rem 0.4rem;
+}
+
+.navbar-brand .logo {
+    height: 20px;
+    width: 20px;
+    object-fit: contain;
+    border-radius: 50%;
+}
+
+.navbar-brand .logo-text {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--white) !important;
+}
+
+.navbar-brand i {
+    font-size: 0.95rem;
+    color: var(--white);
+}
+
+/* Form adjustments */
+.form-control, .form-select {
+    text-align: right;
+}
+
+.form-check {
+    text-align: right;
+    padding-right: 1.5em;
+    padding-left: 0;
+}
+
+.form-check-input {
+    float: right;
+    margin-right: -1.5em;
+    margin-left: 0;
+}
+
+/* Table adjustments */
+table {
+    direction: rtl;
+}
+
+/* Card styling - Pink Theme */
+.card {
+    box-shadow: 0 2px 8px rgba(255, 107, 157, 0.15);
+    margin-bottom: 20px;
+    border: 1px solid var(--pink-lighter);
+    background-color: var(--white);
+}
+
+.card-header {
+    font-weight: bold;
+    background: linear-gradient(135deg, var(--pink-primary) 0%, var(--pink-dark) 100%) !important;
+    color: var(--white) !important;
+    border-bottom: none;
+    padding: 0.6rem 1rem;
+    font-size: 0.95rem;
+}
+
+.card-header.bg-primary {
+    background: linear-gradient(135deg, var(--pink-primary) 0%, var(--pink-dark) 100%) !important;
+}
+
+.card-header.bg-success {
+    background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%) !important;
+}
+
+.card-header.bg-info {
+    background: linear-gradient(135deg, #00bcd4 0%, #0097a7 100%) !important;
+}
+
+/* Map container */
+#map, #routeMap {
+    border: 1px solid #ddd;
+}
+
+/* Badge spacing */
+.badge {
+    margin-left: 5px;
+    margin-right: 0;
+}
+
+/* Button spacing - Pink Theme */
+.btn {
+    margin-left: 5px;
+    margin-right: 0;
+    border-radius: 6px;
+    font-weight: 500;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--pink-primary) 0%, var(--pink-dark) 100%);
+    border: none;
+    color: var(--white);
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, var(--pink-dark) 0%, #c2185b 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(233, 30, 99, 0.3);
+}
+
+.btn:last-child {
+    margin-left: 0;
+}
+
+/* List group RTL */
+.list-group-item {
+    text-align: right;
+}
+
+/* Alert messages */
+.alert {
+    text-align: right;
+}
+
+/* Custom scrollbar for customer selection - Pink Theme */
+.border {
+    scrollbar-width: thin;
+    scrollbar-color: var(--pink-primary) #f1f1f1;
+}
+
+.border::-webkit-scrollbar {
+    width: 8px;
+}
+
+.border::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.border::-webkit-scrollbar-thumb {
+    background: var(--pink-primary);
+    border-radius: 4px;
+}
+
+.border::-webkit-scrollbar-thumb:hover {
+    background: var(--pink-dark);
+}
+
+/* Form inputs - Pink Theme */
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--pink-primary);
+    box-shadow: 0 0 0 0.2rem rgba(255, 107, 157, 0.25);
+}
+
+.form-check-input:checked {
+    background-color: var(--pink-primary);
+    border-color: var(--pink-primary);
+}
+
+/* Badge - Pink Theme */
+.badge.bg-primary {
+    background-color: var(--pink-primary) !important;
+}
+
+/* Table hover - Pink Theme */
+.table-hover tbody tr:hover {
+    background-color: var(--pink-lighter);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .container-fluid {
+        padding: 10px;
+    }
+    
+    #map, #routeMap {
+        height: 400px !important;
+    }
+}

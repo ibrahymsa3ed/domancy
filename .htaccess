@@ -1,0 +1,7 @@
+# UTF-8 encoding
+AddDefaultCharset UTF-8
+
+# Prevent directory listing
+Options -Indexes
+
+# Note: PHP settings should be configured in php.ini or via ini_set() in PHP files
