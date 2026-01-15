@@ -14,12 +14,13 @@ function haversineDistanceKm($lat1, $lon1, $lat2, $lon2) {
 
 $message = '';
 $messageType = '';
+$selected_date = $_POST['order_date'] ?? $_GET['date'] ?? date('Y-m-d');
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] === 'create_orders') {
-            $order_date = $_POST['order_date'] ?? date('Y-m-d');
+            $order_date = $selected_date;
             $customer_ids = $_POST['customer_ids'] ?? [];
 
             if (!empty($customer_ids)) {
@@ -87,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         } elseif ($_POST['action'] === 'auto_assign') {
-            $order_date = $_POST['order_date'] ?? date('Y-m-d');
+            $order_date = $selected_date;
             try {
                 $factory = getDB()->query("SELECT * FROM factory LIMIT 1")->fetch();
                 if (!$factory) {
@@ -194,9 +195,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get selected date
-$selected_date = $_GET['date'] ?? date('Y-m-d');
-
 // Get all customers
 $customers = getDB()->query("SELECT * FROM customers ORDER BY name")->fetchAll();
 
@@ -262,18 +260,25 @@ require_once 'header.php';
                                 </div>
                                 <div class="col-md-9">
                                     <label class="form-label">اختر العملاء</label>
-                                    <div class="border p-3" style="max-height: 200px; overflow-y: auto;">
+                                    <select class="form-select" id="customerSelect" name="customer_ids[]" multiple>
                                         <?php foreach ($customers as $customer): ?>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="customer_ids[]" 
-                                                       value="<?php echo $customer['id']; ?>" 
-                                                       id="customer_<?php echo $customer['id']; ?>"
-                                                       <?php echo in_array($customer['id'], $orderedCustomerIds) ? 'checked' : ''; ?>>
-                                                <label class="form-check-label" for="customer_<?php echo $customer['id']; ?>">
+                                            <option value="<?php echo $customer['id']; ?>" <?php echo in_array($customer['id'], $orderedCustomerIds) ? 'selected' : ''; ?>>
                                                     <?php echo htmlspecialchars($customer['name']); ?> - <?php echo htmlspecialchars($customer['address']); ?>
-                                                </label>
-                                            </div>
+                                            </option>
                                         <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">العملاء المختارون</label>
+                                    <div id="selectedCustomersList" class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
+                                        <div class="text-muted small">لا يوجد عملاء مختارين</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-8 d-flex align-items-end">
+                                    <div class="text-muted">
+                                        عدد العملاء المختارين: <span id="selectedCustomersCount">0</span>
                                     </div>
                                 </div>
                             </div>
@@ -351,7 +356,7 @@ require_once 'header.php';
                                                                 </button>
                                                             </form>
                                                         <?php endif; ?>
-                                                        <form method="POST" class="d-inline" onsubmit="return confirm('هل أنت متأكد من حذف هذا الطلب؟');">
+                                                        <form method="POST" class="d-inline">
                                                             <input type="hidden" name="action" value="remove_order">
                                                             <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                                                             <button type="submit" class="btn btn-sm btn-danger">
@@ -387,15 +392,115 @@ require_once 'header.php';
         </div>
     </div>
 
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+    <style>
+        .select2-container {
+            width: 100% !important;
+        }
+
+        .select2-container--default .select2-selection--multiple {
+            min-height: 38px;
+            padding-right: 28px;
+        }
+
+        .select2-container--default .select2-selection--multiple .select2-selection__rendered {
+            display: none;
+        }
+
+        .select2-container--default .select2-selection--multiple .select2-selection__placeholder {
+            display: block;
+            color: #6c757d;
+        }
+
+        .select2-container--default .select2-selection--multiple {
+            position: relative;
+            cursor: pointer;
+        }
+
+        .select2-container--default .select2-selection--multiple::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            right: 10px;
+            width: 0;
+            height: 0;
+            margin-top: -2px;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid #6c757d;
+            pointer-events: none;
+        }
+
+        .select2-dropdown {
+            z-index: 2000;
+        }
+
+        #selectedCustomersList {
+            direction: ltr;
+            text-align: right;
+        }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script>
+        // Enable searchable multi-select for customers
+        $(document).ready(function() {
+            $('#customerSelect').select2({
+                placeholder: 'ابحث واختر العملاء',
+                width: '100%'
+            });
+            updateSelectedCustomersList();
+            $('#customerSelect').on('change', updateSelectedCustomersList);
+        });
+
+        function updateSelectedCustomersList() {
+            const select = document.getElementById('customerSelect');
+            const list = document.getElementById('selectedCustomersList');
+            const count = document.getElementById('selectedCustomersCount');
+            const selectedOptions = Array.from(select.selectedOptions);
+
+            if (!list || !count) return;
+
+            list.innerHTML = '';
+            if (selectedOptions.length === 0) {
+                list.innerHTML = '<div class="text-muted small">لا يوجد عملاء مختارين</div>';
+                count.textContent = '0';
+                return;
+            }
+
+            selectedOptions.forEach(option => {
+                const item = document.createElement('div');
+                item.className = 'border-bottom py-1 d-flex justify-content-between align-items-center';
+
+                const label = document.createElement('span');
+                label.textContent = option.text;
+                item.appendChild(label);
+
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'btn btn-sm btn-light border';
+                removeBtn.textContent = '×';
+                removeBtn.title = 'إزالة من القائمة';
+                removeBtn.addEventListener('click', () => {
+                    option.selected = false;
+                    $('#customerSelect').trigger('change');
+                });
+                item.appendChild(removeBtn);
+
+                list.appendChild(item);
+            });
+            count.textContent = selectedOptions.length;
+        }
+
         const factoryLocation = <?php echo $factory ? json_encode(['lat' => floatval($factory['latitude']), 'lng' => floatval($factory['longitude'])]) : 'null'; ?>;
         const ordersByDriver = <?php echo json_encode($ordersByDriver, JSON_UNESCAPED_UNICODE); ?>;
         const drivers = <?php echo json_encode($drivers, JSON_UNESCAPED_UNICODE); ?>;
+        const todayOrders = <?php echo json_encode($todayOrders, JSON_UNESCAPED_UNICODE); ?>;
         
         let routeMap;
         const routeRenderers = {};
-        const routeMarkersByDriver = {};
-        const routeInfoWindows = {};
+        const orderMarkers = [];
+        const orderInfoWindow = new google.maps.InfoWindow();
 
         function initRouteMap() {
             if (!factoryLocation) {
@@ -416,6 +521,8 @@ require_once 'header.php';
                 title: 'دومانسي',
                 icon: { url: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png' }
             });
+
+            renderOrderMarkers();
 
             // Show all routes by default
             showAllRoutes();
@@ -473,34 +580,38 @@ require_once 'header.php';
                 if (status === 'OK') {
                     directionsRenderer.setDirections(result);
                     routeRenderers[driverId] = directionsRenderer;
-                    addOrderMarkers(driverId, driverOrders);
                 }
             });
         }
 
-        function addOrderMarkers(driverId, driverOrders) {
-            routeMarkersByDriver[driverId] = [];
-            const infoWindow = new google.maps.InfoWindow();
-            routeInfoWindows[driverId] = infoWindow;
+        function renderOrderMarkers() {
+            orderMarkers.forEach(marker => marker.setMap(null));
+            orderMarkers.length = 0;
 
-            driverOrders.forEach(order => {
+            todayOrders.forEach(order => {
+                const isAssigned = !!order.driver_id;
                 const marker = new google.maps.Marker({
                     position: { lat: parseFloat(order.latitude), lng: parseFloat(order.longitude) },
                     map: routeMap,
                     title: order.customer_name,
-                    icon: { url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png' }
+                    icon: {
+                        url: isAssigned
+                            ? 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+                            : 'http://maps.google.com/mapfiles/ms/icons/gray-dot.png'
+                    }
                 });
                 marker.addListener('click', () => {
-                    infoWindow.setContent(`
+                    orderInfoWindow.setContent(`
                         <div>
                             <strong>${order.customer_name}</strong><br>
                             ${order.phone ? '📞 ' + order.phone + '<br>' : ''}
-                            ${order.address}
+                            ${order.address}<br>
+                            <small>السائق: ${order.driver_name ? order.driver_name : 'غير معين'}</small>
                         </div>
                     `);
-                    infoWindow.open(routeMap, marker);
+                    orderInfoWindow.open(routeMap, marker);
                 });
-                routeMarkersByDriver[driverId].push(marker);
+                orderMarkers.push(marker);
             });
         }
 
@@ -508,10 +619,6 @@ require_once 'header.php';
             if (routeRenderers[driverId]) {
                 routeRenderers[driverId].setMap(null);
                 delete routeRenderers[driverId];
-            }
-            if (routeMarkersByDriver[driverId]) {
-                routeMarkersByDriver[driverId].forEach(marker => marker.setMap(null));
-                delete routeMarkersByDriver[driverId];
             }
         }
 

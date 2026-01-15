@@ -83,6 +83,10 @@ require_once 'header.php';
                                 عرض طلبات اليوم فقط
                             </label>
                         </div>
+                        <div class="btn-group w-100 mb-3" role="group" aria-label="تصفية سريعة">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="filterAllBtn">الكل</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="filterTodayBtn">طلبات اليوم</button>
+                        </div>
                         <hr>
                         <div class="mb-2">
                             <span class="badge bg-success me-2">●</span>
@@ -141,12 +145,21 @@ require_once 'header.php';
 
         customerData.forEach(customer => {
             const markerColor = customer.has_order_today ? 'green' : 'gray';
+            const lat = parseFloat(customer.latitude);
+            const lng = parseFloat(customer.longitude);
+            const hasValidCoords = Number.isFinite(lat) && Number.isFinite(lng);
+            const position = hasValidCoords ? { lat, lng } : factoryLocation;
             const marker = new google.maps.Marker({
-                position: { lat: parseFloat(customer.latitude), lng: parseFloat(customer.longitude) },
+                position: position,
                 map: map,
                 title: customer.name,
                 icon: {
-                    url: `http://maps.google.com/mapfiles/ms/icons/${markerColor}-dot.png`
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 6,
+                    fillColor: markerColor === 'green' ? '#28a745' : '#6c757d',
+                    fillOpacity: 1,
+                    strokeColor: '#ffffff',
+                    strokeWeight: 1
                 },
                 visible: true
             });
@@ -157,6 +170,7 @@ require_once 'header.php';
                         <strong>${customer.name}</strong><br>
                         ${customer.phone ? '📞 ' + customer.phone + '<br>' : ''}
                         ${customer.address}<br>
+                        ${hasValidCoords ? '' : '<small class="text-muted">⚠️ بدون إحداثيات دقيقة</small><br>'}
                         ${customer.has_order_today ? '<span class="badge bg-success">طلبات اليوم</span>' : ''}
                     </div>
                 `
@@ -217,20 +231,62 @@ require_once 'header.php';
             return colors[idNum % colors.length];
         }
 
-        // Filter controls
-        document.getElementById('showAllCustomers').addEventListener('change', function() {
-            const show = this.checked;
-            customerMarkers.forEach(item => {
-                item.marker.setVisible(show);
-            });
-        });
+        function updateMapBounds() {
+            const bounds = new google.maps.LatLngBounds();
+            let hasAny = false;
 
-        document.getElementById('showTodayOrders').addEventListener('change', function() {
-            const show = this.checked;
+            // Always include factory
+            bounds.extend(factoryLocation);
+            hasAny = true;
+
             customerMarkers.forEach(item => {
-                item.marker.setVisible(show && item.hasOrder);
+                if (item.marker.getVisible()) {
+                    bounds.extend(item.marker.getPosition());
+                    hasAny = true;
+                }
             });
-        });
+
+            if (hasAny) {
+                map.fitBounds(bounds);
+            }
+        }
+
+        function applyCustomerFilters() {
+            const showAll = document.getElementById('showAllCustomers').checked;
+            const showToday = document.getElementById('showTodayOrders').checked;
+
+            customerMarkers.forEach(item => {
+                if (showAll) {
+                    item.marker.setVisible(true);
+                } else if (showToday) {
+                    item.marker.setVisible(item.hasOrder);
+                } else {
+                    item.marker.setVisible(false);
+                }
+            });
+
+            updateMapBounds();
+        }
+
+        function setFilterMode(mode) {
+            const showAllEl = document.getElementById('showAllCustomers');
+            const showTodayEl = document.getElementById('showTodayOrders');
+            if (mode === 'all') {
+                showAllEl.checked = true;
+                showTodayEl.checked = false;
+            } else if (mode === 'today') {
+                showAllEl.checked = false;
+                showTodayEl.checked = true;
+            }
+            applyCustomerFilters();
+        }
+
+        // Filter controls
+        document.getElementById('showAllCustomers').addEventListener('change', applyCustomerFilters);
+        document.getElementById('showTodayOrders').addEventListener('change', applyCustomerFilters);
+        document.getElementById('filterAllBtn').addEventListener('click', () => setFilterMode('all'));
+        document.getElementById('filterTodayBtn').addEventListener('click', () => setFilterMode('today'));
+        setFilterMode('all');
 
         // Render daily routes on main map
         renderDailyRoutes();
