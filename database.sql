@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS drivers (
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(20),
     car_number VARCHAR(50),
+    color VARCHAR(20) DEFAULT '#e6194b',
     capacity INT DEFAULT 10 COMMENT 'Number of orders driver can handle per day',
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -201,7 +201,7 @@ $customers = getDB()->query("SELECT * FROM customers ORDER BY name")->fetchAll()
 // Get today's orders
 $orders = getDB()->prepare("
     SELECT o.*, c.name as customer_name, c.address, c.latitude, c.longitude, c.phone,
-           d.name as driver_name, d.capacity
+           d.name as driver_name, d.capacity, d.color as driver_color
     FROM daily_orders o
     LEFT JOIN customers c ON o.customer_id = c.id
     LEFT JOIN drivers d ON o.driver_id = d.id
@@ -496,6 +496,12 @@ require_once 'header.php';
         const ordersByDriver = <?php echo json_encode($ordersByDriver, JSON_UNESCAPED_UNICODE); ?>;
         const drivers = <?php echo json_encode($drivers, JSON_UNESCAPED_UNICODE); ?>;
         const todayOrders = <?php echo json_encode($todayOrders, JSON_UNESCAPED_UNICODE); ?>;
+        const driverColorMap = {};
+        drivers.forEach(driver => {
+            if (driver.color) {
+                driverColorMap[driver.id] = driver.color;
+            }
+        });
         
         let routeMap;
         const routeRenderers = {};
@@ -632,9 +638,16 @@ require_once 'header.php';
         }
 
         function getDriverColor(driverId) {
-            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFD93D', '#A66DD4', '#F4A261'];
+            const mapped = driverColorMap[driverId];
+            if (mapped) return mapped;
+            const fallback = [
+                '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
+                '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe',
+                '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000',
+                '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080'
+            ];
             const idNum = parseInt(driverId, 10) || 0;
-            return colors[idNum % colors.length];
+            return fallback[idNum % fallback.length];
         }
 
         function setToggleState(driverId, isVisible) {

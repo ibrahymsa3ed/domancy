@@ -11,13 +11,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $name = $_POST['name'] ?? '';
             $phone = $_POST['phone'] ?? '';
             $car_number = $_POST['car_number'] ?? '';
+            $color = $_POST['color'] ?? '#e6194b';
             $capacity = $_POST['capacity'] ?? 10;
             $is_active = isset($_POST['is_active']) ? 1 : 0;
 
             if ($name) {
                 try {
-                    $stmt = getDB()->prepare("INSERT INTO drivers (name, phone, car_number, capacity, is_active) VALUES (?, ?, ?, ?, ?)");
-                    $stmt->execute([$name, $phone, $car_number, $capacity, $is_active]);
+                    $stmt = getDB()->prepare("INSERT INTO drivers (name, phone, car_number, color, capacity, is_active) VALUES (?, ?, ?, ?, ?, ?)");
+                    $stmt->execute([$name, $phone, $car_number, $color, $capacity, $is_active]);
                     $message = "تم إضافة السائق بنجاح";
                     $messageType = "success";
                 } catch (PDOException $e) {
@@ -51,6 +52,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $messageType = "success";
                 } catch (PDOException $e) {
                     $message = "خطأ في تحديث حالة السائق";
+                    $messageType = "danger";
+                }
+            }
+        } elseif ($_POST['action'] === 'update_color') {
+            $id = $_POST['id'] ?? 0;
+            $color = $_POST['color'] ?? '#e6194b';
+            if ($id) {
+                try {
+                    $stmt = getDB()->prepare("UPDATE drivers SET color = ? WHERE id = ?");
+                    $stmt->execute([$color, $id]);
+                    $message = "تم تحديث لون السائق";
+                    $messageType = "success";
+                } catch (PDOException $e) {
+                    $message = "خطأ في تحديث لون السائق: " . $e->getMessage();
                     $messageType = "danger";
                 }
             }
@@ -96,6 +111,25 @@ require_once 'header.php';
                                 <input type="text" class="form-control" name="car_number">
                             </div>
                             <div class="mb-3">
+                                <label class="form-label">لون المسار</label>
+                                <div class="d-flex align-items-center gap-2">
+                                    <input type="color" class="form-control form-control-color" name="color" value="#e6194b" list="driverColorOptions">
+                                    <select class="form-select form-select-sm" id="colorPresetSelect">
+                                        <option value="">ألوان جاهزة</option>
+                                        <option value="#e6194b">أحمر</option>
+                                        <option value="#3cb44b">أخضر</option>
+                                        <option value="#ffe119">أصفر</option>
+                                        <option value="#4363d8">أزرق</option>
+                                        <option value="#f58231">برتقالي</option>
+                                        <option value="#911eb4">بنفسجي</option>
+                                        <option value="#46f0f0">سماوي</option>
+                                        <option value="#800000">عنابي</option>
+                                        <option value="#000075">كحلي</option>
+                                        <option value="#808080">رمادي</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mb-3">
                                 <label class="form-label">القدرة (عدد الطلبات في اليوم)</label>
                                 <input type="number" class="form-control" name="capacity" value="10" min="1">
                             </div>
@@ -126,6 +160,7 @@ require_once 'header.php';
                                         <th>الهاتف</th>
                                         <th>رقم السيارة</th>
                                         <th>القدرة</th>
+                                        <th>اللون</th>
                                         <th>الحالة</th>
                                         <th>الإجراءات</th>
                                     </tr>
@@ -133,7 +168,7 @@ require_once 'header.php';
                                 <tbody>
                                     <?php if (empty($drivers)): ?>
                                         <tr>
-                                            <td colspan="6" class="text-center text-muted">لا يوجد سائقين</td>
+                                            <td colspan="7" class="text-center text-muted">لا يوجد سائقين</td>
                                         </tr>
                                     <?php else: ?>
                                         <?php foreach ($drivers as $driver): ?>
@@ -142,6 +177,21 @@ require_once 'header.php';
                                                 <td><?php echo htmlspecialchars($driver['phone'] ?? '-'); ?></td>
                                                 <td><?php echo htmlspecialchars($driver['car_number'] ?? '-'); ?></td>
                                                 <td><?php echo $driver['capacity']; ?> طلبات في اليوم</td>
+                                                <td>
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <span class="badge" style="background-color: <?php echo htmlspecialchars($driver['color'] ?? '#e6194b'); ?>;">
+                                                            &nbsp;
+                                                        </span>
+                                                        <form method="POST" class="d-flex align-items-center gap-1">
+                                                            <input type="hidden" name="action" value="update_color">
+                                                            <input type="hidden" name="id" value="<?php echo $driver['id']; ?>">
+                                                            <input type="color" class="form-control form-control-color" name="color" value="<?php echo htmlspecialchars($driver['color'] ?? '#e6194b'); ?>" list="driverColorOptions">
+                                                            <button type="submit" class="btn btn-sm btn-outline-primary">
+                                                                <i class="bi bi-check"></i>
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </td>
                                                 <td>
                                                     <?php if ($driver['is_active']): ?>
                                                         <span class="badge bg-success">نشط</span>
@@ -176,5 +226,30 @@ require_once 'header.php';
             </div>
         </div>
     </div>
+
+    <datalist id="driverColorOptions">
+        <option value="#e6194b"></option>
+        <option value="#3cb44b"></option>
+        <option value="#ffe119"></option>
+        <option value="#4363d8"></option>
+        <option value="#f58231"></option>
+        <option value="#911eb4"></option>
+        <option value="#46f0f0"></option>
+        <option value="#800000"></option>
+        <option value="#000075"></option>
+        <option value="#808080"></option>
+    </datalist>
+
+    <script>
+        const presetSelect = document.getElementById('colorPresetSelect');
+        const colorInput = document.querySelector('input[name="color"]');
+        if (presetSelect && colorInput) {
+            presetSelect.addEventListener('change', () => {
+                if (presetSelect.value) {
+                    colorInput.value = presetSelect.value;
+                }
+            });
+        }
+    </script>
 
 <?php require_once 'footer.php'; ?>

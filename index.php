@@ -7,6 +7,9 @@ $factoryLng = 31.2357;
 $customers = [];
 $todayOrderIds = [];
 $todayOrdersByDriver = [];
+$todayOrdersByCustomer = [];
+$driverColors = [];
+$todayDrivers = [];
 
 try {
     // Get factory location
@@ -25,24 +28,37 @@ try {
     $orders->execute([$today]);
     $todayOrderIds = $orders->fetchAll(PDO::FETCH_COLUMN);
 
-    // Get today's orders with driver routes
+    // Get today's orders with driver routes + customer mapping
     $routesStmt = getDB()->prepare("
-        SELECT o.driver_id, c.name, c.address, c.latitude, c.longitude, c.phone, d.name AS driver_name
+        SELECT o.customer_id, o.driver_id, c.name, c.address, c.latitude, c.longitude, c.phone, d.name AS driver_name, d.color AS driver_color
         FROM daily_orders o
         JOIN customers c ON o.customer_id = c.id
         LEFT JOIN drivers d ON o.driver_id = d.id
-        WHERE o.order_date = ? AND o.driver_id IS NOT NULL
+        WHERE o.order_date = ?
         ORDER BY o.driver_id, o.id
     ");
     $routesStmt->execute([$today]);
     $routeRows = $routesStmt->fetchAll();
     foreach ($routeRows as $row) {
         $driverId = $row['driver_id'];
-        if (!isset($todayOrdersByDriver[$driverId])) {
-            $todayOrdersByDriver[$driverId] = [];
+        if ($driverId) {
+            if (!isset($todayOrdersByDriver[$driverId])) {
+                $todayOrdersByDriver[$driverId] = [];
+            }
+            $todayOrdersByDriver[$driverId][] = $row;
         }
-        $todayOrdersByDriver[$driverId][] = $row;
+        if (!empty($row['driver_id']) && !empty($row['driver_name'])) {
+            $todayDrivers[$row['driver_id']] = $row['driver_name'];
+        }
+        $todayOrdersByCustomer[$row['customer_id']] = [
+            'driver_name' => $row['driver_name'] ?? null,
+            'driver_id' => $row['driver_id'] ?? null,
+            'driver_color' => $row['driver_color'] ?? null,
+        ];
     }
+
+    // Get driver colors
+    $driverColors = getDB()->query("SELECT id, color FROM drivers")->fetchAll();
 
     // Mark customers with orders today
     foreach ($customers as &$customer) {
@@ -55,6 +71,9 @@ try {
     $customers = [];
     $todayOrderIds = [];
     $todayOrdersByDriver = [];
+    $todayOrdersByCustomer = [];
+    $driverColors = [];
+    $todayDrivers = [];
 }
 
 // Set variables for header
@@ -74,6 +93,21 @@ require_once 'header.php';
                         <div class="btn-group w-100 mb-3" role="group" aria-label="تصفية سريعة">
                             <button type="button" class="btn btn-sm btn-outline-primary" id="filterAllBtn">الكل</button>
                             <button type="button" class="btn btn-sm btn-outline-primary" id="filterTodayBtn">طلبات اليوم</button>
+                        </div>
+                        <div class="mb-3">
+                            <div class="fw-bold mb-2">مسارات اليوم</div>
+                            <?php if (empty($todayDrivers)): ?>
+                                <div class="text-muted small">لا يوجد سائقين معينين اليوم</div>
+                            <?php else: ?>
+                                <?php foreach ($todayDrivers as $driverId => $driverName): ?>
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="small"><?php echo htmlspecialchars($driverName); ?></span>
+                                        <button type="button" class="btn btn-sm btn-outline-primary route-toggle-btn" data-driver-id="<?php echo $driverId; ?>">
+                                            إخفاء المسار
+                                        </button>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </div>
                         <hr>
                         <div class="mb-2">
@@ -130,6 +164,14 @@ require_once 'header.php';
         const customerMarkers = [];
         const customerData = <?php echo json_encode($customers, JSON_UNESCAPED_UNICODE); ?>;
         const todayOrdersByDriver = <?php echo json_encode($todayOrdersByDriver, JSON_UNESCAPED_UNICODE); ?>;
+        const todayOrdersByCustomer = <?php echo json_encode($todayOrdersByCustomer, JSON_UNESCAPED_UNICODE); ?>;
+        const driverColors = <?php echo json_encode($driverColors, JSON_UNESCAPED_UNICODE); ?>;
+        const driverColorMap = {};
+        driverColors.forEach(driver => {
+            if (driver.color) {
+                driverColorMap[driver.id] = driver.color;
+            }
+        });
 
         customerData.forEach(customer => {
             const markerColor = customer.has_order_today ? 'green' : 'gray';
@@ -153,6 +195,10 @@ require_once 'header.php';
                 visible: true
             });
 
+            const orderInfo = todayOrdersByCustomer[customer.id] || null;
+            const driverLabel = orderInfo
+                ? `السائق: ${orderInfo.driver_name ? orderInfo.driver_name : 'غير معين'}`
+                : null;
             const infoWindow = new google.maps.InfoWindow({
                 content: `
                     <div>
@@ -160,7 +206,8 @@ require_once 'header.php';
                         ${customer.phone ? '📞 ' + customer.phone + '<br>' : ''}
                         ${customer.address}<br>
                         ${hasValidCoords ? '' : '<small class="text-muted">⚠️ بدون إحداثيات دقيقة</small><br>'}
-                        ${customer.has_order_today ? '<span class="badge bg-success">طلبات اليوم</span>' : ''}
+                        ${customer.has_order_today ? '<span class="badge bg-success">طلبات اليوم</span><br>' : ''}
+                        ${driverLabel ? `<small>${driverLabel}</small>` : ''}
                     </div>
                 `
             });
@@ -214,10 +261,68 @@ require_once 'header.php';
             });
         }
 
+        function toggleMainRoute(driverId) {
+            const isVisible = !!dailyRouteRenderers[driverId];
+            if (isVisible) {
+                dailyRouteRenderers[driverId].setMap(null);
+                delete dailyRouteRenderers[driverId];
+                updateRouteToggleButton(driverId, false);
+            } else {
+                const driverOrders = todayOrdersByDriver[driverId];
+                if (!driverOrders || driverOrders.length === 0) return;
+
+                const directionsService = new google.maps.DirectionsService();
+                const renderer = new google.maps.DirectionsRenderer({
+                    map: map,
+                    suppressMarkers: true,
+                    polylineOptions: {
+                        strokeColor: getDriverColor(driverId),
+                        strokeWeight: 3
+                    }
+                });
+
+                const waypoints = driverOrders.map(order => ({
+                    location: { lat: parseFloat(order.latitude), lng: parseFloat(order.longitude) },
+                    stopover: true
+                }));
+
+                const request = {
+                    origin: factoryLocation,
+                    destination: factoryLocation,
+                    waypoints: waypoints,
+                    optimizeWaypoints: true,
+                    travelMode: google.maps.TravelMode.DRIVING
+                };
+
+                directionsService.route(request, (result, status) => {
+                    if (status === 'OK') {
+                        renderer.setDirections(result);
+                        dailyRouteRenderers[driverId] = renderer;
+                        updateRouteToggleButton(driverId, true);
+                    }
+                });
+            }
+        }
+
+        function updateRouteToggleButton(driverId, isVisible) {
+            const btn = document.querySelector(`.route-toggle-btn[data-driver-id="${driverId}"]`);
+            if (!btn) return;
+            btn.classList.toggle('btn-primary', isVisible);
+            btn.classList.toggle('btn-outline-primary', !isVisible);
+            btn.textContent = isVisible ? 'إخفاء المسار' : 'عرض المسار';
+        }
+
         function getDriverColor(driverId) {
-            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFD93D', '#A66DD4', '#F4A261'];
+            const mapped = driverColorMap[driverId];
+            if (mapped) return mapped;
+            const fallback = [
+                '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
+                '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe',
+                '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000',
+                '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080'
+            ];
             const idNum = parseInt(driverId, 10) || 0;
-            return colors[idNum % colors.length];
+            return fallback[idNum % fallback.length];
         }
 
         function updateMapBounds() {
@@ -282,5 +387,11 @@ require_once 'header.php';
 
         // Render daily routes on main map
         renderDailyRoutes();
+
+        document.querySelectorAll('.route-toggle-btn').forEach(btn => {
+            const driverId = btn.getAttribute('data-driver-id');
+            btn.addEventListener('click', () => toggleMainRoute(driverId));
+            updateRouteToggleButton(driverId, true);
+        });
     </script>
 <?php require_once 'footer.php'; ?>
