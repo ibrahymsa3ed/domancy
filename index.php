@@ -1,6 +1,9 @@
 <?php
 require_once 'db.php';
 
+$message = '';
+$messageType = '';
+
 // Initialize variables
 $factoryLat = 30.0444; // Default Cairo coordinates
 $factoryLng = 31.2357;
@@ -10,8 +13,22 @@ $todayOrdersByDriver = [];
 $todayOrdersByCustomer = [];
 $driverColors = [];
 $todayDrivers = [];
+$todayOrdersForAssign = [];
+$drivers = [];
 
 try {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+        if ($_POST['action'] === 'assign_driver') {
+            $order_id = $_POST['order_id'] ?? 0;
+            $driver_id = $_POST['driver_id'] ?? 0;
+            if ($order_id && $driver_id) {
+                $stmt = getDB()->prepare("UPDATE daily_orders SET driver_id = ?, status = 'assigned' WHERE id = ?");
+                $stmt->execute([$driver_id, $order_id]);
+                $message = "تم تعيين السائق بنجاح";
+                $messageType = "success";
+            }
+        }
+    }
     // Get factory location
     $factory = getDB()->query("SELECT * FROM factory LIMIT 1")->fetch();
     if ($factory) {
@@ -22,11 +39,26 @@ try {
     // Get all customers
     $customers = getDB()->query("SELECT * FROM customers ORDER BY name")->fetchAll();
 
+    // Get active drivers
+    $drivers = getDB()->query("SELECT * FROM drivers WHERE is_active = 1 ORDER BY name")->fetchAll();
+
     // Get today's orders
     $today = date('Y-m-d');
     $orders = getDB()->prepare("SELECT customer_id FROM daily_orders WHERE order_date = ?");
     $orders->execute([$today]);
     $todayOrderIds = $orders->fetchAll(PDO::FETCH_COLUMN);
+
+    // Get today's orders for assignment list
+    $todayOrdersList = getDB()->prepare("
+        SELECT o.id, o.driver_id, c.name AS customer_name, d.name AS driver_name
+        FROM daily_orders o
+        JOIN customers c ON o.customer_id = c.id
+        LEFT JOIN drivers d ON o.driver_id = d.id
+        WHERE o.order_date = ?
+        ORDER BY o.id
+    ");
+    $todayOrdersList->execute([$today]);
+    $todayOrdersForAssign = $todayOrdersList->fetchAll();
 
     // Get today's orders with driver routes + customer mapping
     $routesStmt = getDB()->prepare("
@@ -74,6 +106,8 @@ try {
     $todayOrdersByCustomer = [];
     $driverColors = [];
     $todayDrivers = [];
+    $todayOrdersForAssign = [];
+    $drivers = [];
 }
 
 // Set variables for header
@@ -83,6 +117,12 @@ require_once 'header.php';
 ?>
 
     <div class="container-fluid mt-3">
+        <?php if (!empty($message)): ?>
+            <div class="alert alert-<?php echo $messageType; ?> alert-dismissible fade show" role="alert">
+                <?php echo $message; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
         <div class="row">
             <div class="col-md-3">
                 <div class="card">
@@ -107,6 +147,37 @@ require_once 'header.php';
                                         </button>
                                     </div>
                                 <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                        <div class="mb-3">
+                            <div class="fw-bold mb-2">تعيين السائقين اليوم</div>
+                            <?php if (empty($todayOrdersForAssign)): ?>
+                                <div class="text-muted small">لا توجد طلبات اليوم</div>
+                            <?php else: ?>
+                                <div class="border rounded p-2" style="max-height: 250px; overflow-y: auto;">
+                                    <?php foreach ($todayOrdersForAssign as $order): ?>
+                                        <div class="mb-2">
+                                            <div class="small fw-bold"><?php echo htmlspecialchars($order['customer_name']); ?></div>
+                                            <form method="POST">
+                                                <input type="hidden" name="action" value="assign_driver">
+                                                <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
+                                                <select name="driver_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                                                    <?php if (!$order['driver_id']): ?>
+                                                        <option value="">اختر سائق</option>
+                                                    <?php endif; ?>
+                                                    <?php foreach ($drivers as $driver): ?>
+                                                        <option value="<?php echo $driver['id']; ?>" <?php echo ($order['driver_id'] == $driver['id']) ? 'selected' : ''; ?>>
+                                                            <?php echo htmlspecialchars($driver['name']); ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </form>
+                                            <div class="text-muted small">
+                                                السائق الحالي: <?php echo $order['driver_name'] ? htmlspecialchars($order['driver_name']) : 'غير معين'; ?>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
                             <?php endif; ?>
                         </div>
                         <hr>

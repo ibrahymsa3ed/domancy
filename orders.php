@@ -27,14 +27,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     getDB()->beginTransaction();
                     
-                    // Delete existing orders for this date
-                    $stmt = getDB()->prepare("DELETE FROM daily_orders WHERE order_date = ?");
-                    $stmt->execute([$order_date]);
+                    // Load existing orders for this date
+                    $existingStmt = getDB()->prepare("SELECT id, customer_id, driver_id, status FROM daily_orders WHERE order_date = ?");
+                    $existingStmt->execute([$order_date]);
+                    $existingOrders = $existingStmt->fetchAll();
 
-                    // Insert new orders
-                    $stmt = getDB()->prepare("INSERT INTO daily_orders (order_date, customer_id, status) VALUES (?, ?, 'pending')");
-                    foreach ($customer_ids as $customer_id) {
-                        $stmt->execute([$order_date, $customer_id]);
+                    $selectedIds = array_map('intval', $customer_ids);
+                    $selectedMap = array_flip($selectedIds);
+
+                    // Delete orders removed from selection
+                    $deleteStmt = getDB()->prepare("DELETE FROM daily_orders WHERE id = ?");
+                    foreach ($existingOrders as $order) {
+                        if (!isset($selectedMap[(int) $order['customer_id']])) {
+                            $deleteStmt->execute([$order['id']]);
+                        }
+                    }
+
+                    // Insert new orders that don't exist yet
+                    $existingCustomerMap = [];
+                    foreach ($existingOrders as $order) {
+                        $existingCustomerMap[(int) $order['customer_id']] = true;
+                    }
+
+                    $insertStmt = getDB()->prepare("INSERT INTO daily_orders (order_date, customer_id, status) VALUES (?, ?, 'pending')");
+                    foreach ($selectedIds as $customer_id) {
+                        if (!isset($existingCustomerMap[$customer_id])) {
+                            $insertStmt->execute([$order_date, $customer_id]);
+                        }
                     }
 
                     getDB()->commit();
