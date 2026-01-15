@@ -71,18 +71,6 @@ require_once 'header.php';
                         <h5 class="mb-0"><i class="bi bi-filter"></i> الفلاتر</h5>
                     </div>
                     <div class="card-body">
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="showAllCustomers" checked>
-                            <label class="form-check-label" for="showAllCustomers">
-                                عرض جميع العملاء
-                            </label>
-                        </div>
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="showTodayOrders" checked>
-                            <label class="form-check-label" for="showTodayOrders">
-                                عرض طلبات اليوم فقط
-                            </label>
-                        </div>
                         <div class="btn-group w-100 mb-3" role="group" aria-label="تصفية سريعة">
                             <button type="button" class="btn btn-sm btn-outline-primary" id="filterAllBtn">الكل</button>
                             <button type="button" class="btn btn-sm btn-outline-primary" id="filterTodayBtn">طلبات اليوم</button>
@@ -154,12 +142,13 @@ require_once 'header.php';
                 map: map,
                 title: customer.name,
                 icon: {
-                    path: google.maps.SymbolPath.CIRCLE,
-                    scale: 6,
+                    path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z",
                     fillColor: markerColor === 'green' ? '#28a745' : '#6c757d',
                     fillOpacity: 1,
                     strokeColor: '#ffffff',
-                    strokeWeight: 1
+                    strokeWeight: 1,
+                    scale: 1.2,
+                    anchor: new google.maps.Point(12, 22)
                 },
                 visible: true
             });
@@ -252,8 +241,8 @@ require_once 'header.php';
         }
 
         function applyCustomerFilters() {
-            const showAll = document.getElementById('showAllCustomers').checked;
-            const showToday = document.getElementById('showTodayOrders').checked;
+            const showAll = currentFilter === 'all';
+            const showToday = currentFilter === 'today';
 
             customerMarkers.forEach(item => {
                 if (showAll) {
@@ -269,21 +258,24 @@ require_once 'header.php';
         }
 
         function setFilterMode(mode) {
-            const showAllEl = document.getElementById('showAllCustomers');
-            const showTodayEl = document.getElementById('showTodayOrders');
-            if (mode === 'all') {
-                showAllEl.checked = true;
-                showTodayEl.checked = false;
-            } else if (mode === 'today') {
-                showAllEl.checked = false;
-                showTodayEl.checked = true;
-            }
+            currentFilter = mode;
             applyCustomerFilters();
+            updateFilterButtons();
+        }
+
+        function updateFilterButtons() {
+            const allBtn = document.getElementById('filterAllBtn');
+            const todayBtn = document.getElementById('filterTodayBtn');
+            if (!allBtn || !todayBtn) return;
+            const isAll = currentFilter === 'all';
+            allBtn.classList.toggle('btn-primary', isAll);
+            allBtn.classList.toggle('btn-outline-primary', !isAll);
+            todayBtn.classList.toggle('btn-primary', !isAll);
+            todayBtn.classList.toggle('btn-outline-primary', isAll);
         }
 
         // Filter controls
-        document.getElementById('showAllCustomers').addEventListener('change', applyCustomerFilters);
-        document.getElementById('showTodayOrders').addEventListener('change', applyCustomerFilters);
+        let currentFilter = 'all';
         document.getElementById('filterAllBtn').addEventListener('click', () => setFilterMode('all'));
         document.getElementById('filterTodayBtn').addEventListener('click', () => setFilterMode('today'));
         setFilterMode('all');
