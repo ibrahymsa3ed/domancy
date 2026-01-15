@@ -6,6 +6,7 @@ $factoryLat = 30.0444; // Default Cairo coordinates
 $factoryLng = 31.2357;
 $customers = [];
 $todayOrderIds = [];
+$todayOrdersByDriver = [];
 
 try {
     // Get factory location
@@ -24,6 +25,25 @@ try {
     $orders->execute([$today]);
     $todayOrderIds = $orders->fetchAll(PDO::FETCH_COLUMN);
 
+    // Get today's orders with driver routes
+    $routesStmt = getDB()->prepare("
+        SELECT o.driver_id, c.name, c.address, c.latitude, c.longitude, c.phone, d.name AS driver_name
+        FROM daily_orders o
+        JOIN customers c ON o.customer_id = c.id
+        LEFT JOIN drivers d ON o.driver_id = d.id
+        WHERE o.order_date = ? AND o.driver_id IS NOT NULL
+        ORDER BY o.driver_id, o.id
+    ");
+    $routesStmt->execute([$today]);
+    $routeRows = $routesStmt->fetchAll();
+    foreach ($routeRows as $row) {
+        $driverId = $row['driver_id'];
+        if (!isset($todayOrdersByDriver[$driverId])) {
+            $todayOrdersByDriver[$driverId] = [];
+        }
+        $todayOrdersByDriver[$driverId][] = $row;
+    }
+
     // Mark customers with orders today
     foreach ($customers as &$customer) {
         $customer['has_order_today'] = in_array($customer['id'], $todayOrderIds);
@@ -34,6 +54,7 @@ try {
     error_log("Database error: " . $e->getMessage());
     $customers = [];
     $todayOrderIds = [];
+    $todayOrdersByDriver = [];
 }
 
 // Set variables for header
@@ -116,6 +137,7 @@ require_once 'header.php';
         // Customer markers
         const customerMarkers = [];
         const customerData = <?php echo json_encode($customers, JSON_UNESCAPED_UNICODE); ?>;
+        const todayOrdersByDriver = <?php echo json_encode($todayOrdersByDriver, JSON_UNESCAPED_UNICODE); ?>;
 
         customerData.forEach(customer => {
             const markerColor = customer.has_order_today ? 'green' : 'gray';
@@ -151,6 +173,50 @@ require_once 'header.php';
             });
         });
 
+        const dailyRouteRenderers = {};
+        function renderDailyRoutes() {
+            const directionsService = new google.maps.DirectionsService();
+            Object.keys(todayOrdersByDriver).forEach(driverId => {
+                const driverOrders = todayOrdersByDriver[driverId];
+                if (!driverOrders || driverOrders.length === 0) return;
+
+                const waypoints = driverOrders.map(order => ({
+                    location: { lat: parseFloat(order.latitude), lng: parseFloat(order.longitude) },
+                    stopover: true
+                }));
+
+                const renderer = new google.maps.DirectionsRenderer({
+                    map: map,
+                    suppressMarkers: true,
+                    polylineOptions: {
+                        strokeColor: getDriverColor(driverId),
+                        strokeWeight: 3
+                    }
+                });
+
+                const request = {
+                    origin: factoryLocation,
+                    destination: factoryLocation,
+                    waypoints: waypoints,
+                    optimizeWaypoints: true,
+                    travelMode: google.maps.TravelMode.DRIVING
+                };
+
+                directionsService.route(request, (result, status) => {
+                    if (status === 'OK') {
+                        renderer.setDirections(result);
+                        dailyRouteRenderers[driverId] = renderer;
+                    }
+                });
+            });
+        }
+
+        function getDriverColor(driverId) {
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFD93D', '#A66DD4', '#F4A261'];
+            const idNum = parseInt(driverId, 10) || 0;
+            return colors[idNum % colors.length];
+        }
+
         // Filter controls
         document.getElementById('showAllCustomers').addEventListener('change', function() {
             const show = this.checked;
@@ -165,5 +231,8 @@ require_once 'header.php';
                 item.marker.setVisible(show && item.hasOrder);
             });
         });
+
+        // Render daily routes on main map
+        renderDailyRoutes();
     </script>
 <?php require_once 'footer.php'; ?>

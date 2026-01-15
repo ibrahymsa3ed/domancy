@@ -1,6 +1,17 @@
 <?php
 require_once 'db.php';
 
+function haversineDistanceKm($lat1, $lon1, $lat2, $lon2) {
+    $earthRadius = 6371;
+    $latDelta = deg2rad($lat2 - $lat1);
+    $lonDelta = deg2rad($lon2 - $lon1);
+    $a = sin($latDelta / 2) * sin($latDelta / 2) +
+        cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+        sin($lonDelta / 2) * sin($lonDelta / 2);
+    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+    return $earthRadius * $c;
+}
+
 $message = '';
 $messageType = '';
 
@@ -62,6 +73,123 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $messageType = "danger";
                 }
             }
+        } elseif ($_POST['action'] === 'unassign_driver') {
+            $order_id = $_POST['order_id'] ?? 0;
+            if ($order_id) {
+                try {
+                    $stmt = getDB()->prepare("UPDATE daily_orders SET driver_id = NULL, status = 'pending' WHERE id = ?");
+                    $stmt->execute([$order_id]);
+                    $message = "تم إلغاء تعيين السائق";
+                    $messageType = "success";
+                } catch (PDOException $e) {
+                    $message = "خطأ في إلغاء التعيين: " . $e->getMessage();
+                    $messageType = "danger";
+                }
+            }
+        } elseif ($_POST['action'] === 'auto_assign') {
+            $order_date = $_POST['order_date'] ?? date('Y-m-d');
+            try {
+                $factory = getDB()->query("SELECT * FROM factory LIMIT 1")->fetch();
+                if (!$factory) {
+                    throw new RuntimeException("يرجى تحديد موقع المصنع أولاً");
+                }
+
+                $driversStmt = getDB()->query("SELECT id, capacity FROM drivers WHERE is_active = 1 ORDER BY id");
+                $drivers = $driversStmt->fetchAll();
+                if (empty($drivers)) {
+                    throw new RuntimeException("لا يوجد سائقين نشطين");
+                }
+
+                $ordersStmt = getDB()->prepare("
+                    SELECT o.id, c.id AS customer_id, c.latitude, c.longitude
+                    FROM daily_orders o
+                    JOIN customers c ON o.customer_id = c.id
+                    WHERE o.order_date = ? AND o.driver_id IS NULL
+                ");
+                $ordersStmt->execute([$order_date]);
+                $unassignedOrders = $ordersStmt->fetchAll();
+
+                if (empty($unassignedOrders)) {
+                    $message = "لا توجد طلبات غير معينة للتوزيع";
+                    $messageType = "info";
+                } else {
+                    $driverStates = [];
+                    foreach ($drivers as $driver) {
+                        $driverStates[] = [
+                            'id' => (int) $driver['id'],
+                            'capacity' => (int) $driver['capacity'],
+                            'last_lat' => (float) $factory['latitude'],
+                            'last_lng' => (float) $factory['longitude'],
+                        ];
+                    }
+
+                    $assignments = [];
+                    $remainingOrders = $unassignedOrders;
+
+                    while (!empty($remainingOrders)) {
+                        $madeAssignment = false;
+                        foreach ($driverStates as $index => $state) {
+                            if ($state['capacity'] <= 0 || empty($remainingOrders)) {
+                                continue;
+                            }
+
+                            $nearestIndex = null;
+                            $nearestDistance = null;
+                            foreach ($remainingOrders as $orderIndex => $order) {
+                                $distance = haversineDistanceKm(
+                                    $state['last_lat'],
+                                    $state['last_lng'],
+                                    (float) $order['latitude'],
+                                    (float) $order['longitude']
+                                );
+                                if ($nearestDistance === null || $distance < $nearestDistance) {
+                                    $nearestDistance = $distance;
+                                    $nearestIndex = $orderIndex;
+                                }
+                            }
+
+                            if ($nearestIndex !== null) {
+                                $selected = $remainingOrders[$nearestIndex];
+                                $assignments[] = [
+                                    'order_id' => (int) $selected['id'],
+                                    'driver_id' => $state['id'],
+                                ];
+                                $driverStates[$index]['capacity'] -= 1;
+                                $driverStates[$index]['last_lat'] = (float) $selected['latitude'];
+                                $driverStates[$index]['last_lng'] = (float) $selected['longitude'];
+                                unset($remainingOrders[$nearestIndex]);
+                                $remainingOrders = array_values($remainingOrders);
+                                $madeAssignment = true;
+                            }
+                        }
+
+                        if (!$madeAssignment) {
+                            break;
+                        }
+                    }
+
+                    getDB()->beginTransaction();
+                    $updateStmt = getDB()->prepare("UPDATE daily_orders SET driver_id = ?, status = 'assigned' WHERE id = ?");
+                    foreach ($assignments as $assignment) {
+                        $updateStmt->execute([$assignment['driver_id'], $assignment['order_id']]);
+                    }
+                    getDB()->commit();
+
+                    $assignedCount = count($assignments);
+                    $remainingCount = count($remainingOrders);
+                    $message = "تم التوزيع التلقائي لـ {$assignedCount} طلب";
+                    if ($remainingCount > 0) {
+                        $message .= "، وبقي {$remainingCount} بدون سائق بسبب السعة";
+                    }
+                    $messageType = "success";
+                }
+            } catch (Throwable $e) {
+                if (getDB()->inTransaction()) {
+                    getDB()->rollBack();
+                }
+                $message = "خطأ في التوزيع التلقائي: " . $e->getMessage();
+                $messageType = "danger";
+            }
         }
     }
 }
@@ -74,7 +202,7 @@ $customers = getDB()->query("SELECT * FROM customers ORDER BY name")->fetchAll()
 
 // Get today's orders
 $orders = getDB()->prepare("
-    SELECT o.*, c.name as customer_name, c.address, c.latitude, c.longitude, 
+    SELECT o.*, c.name as customer_name, c.address, c.latitude, c.longitude, c.phone,
            d.name as driver_name, d.capacity
     FROM daily_orders o
     LEFT JOIN customers c ON o.customer_id = c.id
@@ -153,6 +281,13 @@ require_once 'header.php';
                                 <i class="bi bi-check-circle"></i> حفظ الطلبات
                             </button>
                         </form>
+                        <form method="POST" class="mt-2">
+                            <input type="hidden" name="action" value="auto_assign">
+                            <input type="hidden" name="order_date" value="<?php echo $selected_date; ?>">
+                            <button type="submit" class="btn btn-outline-primary">
+                                <i class="bi bi-shuffle"></i> توزيع تلقائي حسب المسار
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -207,6 +342,15 @@ require_once 'header.php';
                                                                 </select>
                                                             </form>
                                                         <?php endif; ?>
+                                                        <?php if ($order['driver_id']): ?>
+                                                            <form method="POST" class="d-inline" onsubmit="return confirm('هل تريد إلغاء تعيين السائق لهذا الطلب؟');">
+                                                                <input type="hidden" name="action" value="unassign_driver">
+                                                                <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
+                                                                <button type="submit" class="btn btn-sm btn-warning">
+                                                                    <i class="bi bi-x-circle"></i>
+                                                                </button>
+                                                            </form>
+                                                        <?php endif; ?>
                                                         <form method="POST" class="d-inline" onsubmit="return confirm('هل أنت متأكد من حذف هذا الطلب؟');">
                                                             <input type="hidden" name="action" value="remove_order">
                                                             <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
@@ -220,8 +364,8 @@ require_once 'header.php';
                                         <?php endforeach; ?>
                                     </ul>
                                     <?php if ($driverId !== 'unassigned' && $factory): ?>
-                                        <button class="btn btn-sm btn-primary mt-2" onclick="showRoute(<?php echo $driverId; ?>)">
-                                            <i class="bi bi-map"></i> عرض المسار
+                                        <button class="btn btn-sm btn-primary mt-2" id="routeToggleBtn-<?php echo $driverId; ?>" onclick="toggleRoute(<?php echo $driverId; ?>)">
+                                            <i class="bi bi-map"></i> إخفاء المسار
                                         </button>
                                     <?php endif; ?>
                                 </div>
@@ -249,8 +393,9 @@ require_once 'header.php';
         const drivers = <?php echo json_encode($drivers, JSON_UNESCAPED_UNICODE); ?>;
         
         let routeMap;
-        let routeMarkers = [];
-        let routePolylines = [];
+        const routeRenderers = {};
+        const routeMarkersByDriver = {};
+        const routeInfoWindows = {};
 
         function initRouteMap() {
             if (!factoryLocation) {
@@ -278,57 +423,43 @@ require_once 'header.php';
 
         function showAllRoutes() {
             clearRoutes();
-            const directionsService = new google.maps.DirectionsService();
-            const directionsRenderer = new google.maps.DirectionsRenderer({ map: routeMap });
-
             Object.keys(ordersByDriver).forEach(driverId => {
                 if (driverId === 'unassigned') return;
                 
                 const driverOrders = ordersByDriver[driverId];
                 if (driverOrders.length === 0) return;
-
-                const waypoints = driverOrders.map(order => ({
-                    location: { lat: parseFloat(order.latitude), lng: parseFloat(order.longitude) },
-                    stopover: true
-                }));
-
-                const request = {
-                    origin: factoryLocation,
-                    destination: factoryLocation,
-                    waypoints: waypoints,
-                    optimizeWaypoints: true,
-                    travelMode: google.maps.TravelMode.DRIVING
-                };
-
-                directionsService.route(request, (result, status) => {
-                    if (status === 'OK') {
-                        const renderer = new google.maps.DirectionsRenderer({
-                            map: routeMap,
-                            directions: result,
-                            suppressMarkers: false,
-                            polylineOptions: {
-                                strokeColor: getRandomColor(),
-                                strokeWeight: 3
-                            }
-                        });
-                        routePolylines.push(renderer);
-                    }
-                });
+                renderDriverRoute(driverId, driverOrders, getDriverColor(driverId));
+                setToggleState(driverId, true);
             });
         }
 
-        function showRoute(driverId) {
-            clearRoutes();
+        function toggleRoute(driverId) {
             if (!ordersByDriver[driverId] || ordersByDriver[driverId].length === 0) return;
+            const isVisible = !!routeRenderers[driverId];
+            if (isVisible) {
+                hideDriverRoute(driverId);
+                setToggleState(driverId, false);
+            } else {
+                renderDriverRoute(driverId, ordersByDriver[driverId], getDriverColor(driverId));
+                setToggleState(driverId, true);
+            }
+        }
 
-            const driverOrders = ordersByDriver[driverId];
+        function renderDriverRoute(driverId, driverOrders, color) {
             const waypoints = driverOrders.map(order => ({
                 location: { lat: parseFloat(order.latitude), lng: parseFloat(order.longitude) },
                 stopover: true
             }));
 
             const directionsService = new google.maps.DirectionsService();
-            const directionsRenderer = new google.maps.DirectionsRenderer({ map: routeMap });
+            const directionsRenderer = new google.maps.DirectionsRenderer({
+                map: routeMap,
+                suppressMarkers: true,
+                polylineOptions: {
+                    strokeColor: color,
+                    strokeWeight: 3
+                }
+            });
 
             const request = {
                 origin: factoryLocation,
@@ -341,18 +472,70 @@ require_once 'header.php';
             directionsService.route(request, (result, status) => {
                 if (status === 'OK') {
                     directionsRenderer.setDirections(result);
+                    routeRenderers[driverId] = directionsRenderer;
+                    addOrderMarkers(driverId, driverOrders);
                 }
             });
         }
 
-        function clearRoutes() {
-            routePolylines.forEach(renderer => renderer.setMap(null));
-            routePolylines = [];
+        function addOrderMarkers(driverId, driverOrders) {
+            routeMarkersByDriver[driverId] = [];
+            const infoWindow = new google.maps.InfoWindow();
+            routeInfoWindows[driverId] = infoWindow;
+
+            driverOrders.forEach(order => {
+                const marker = new google.maps.Marker({
+                    position: { lat: parseFloat(order.latitude), lng: parseFloat(order.longitude) },
+                    map: routeMap,
+                    title: order.customer_name,
+                    icon: { url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png' }
+                });
+                marker.addListener('click', () => {
+                    infoWindow.setContent(`
+                        <div>
+                            <strong>${order.customer_name}</strong><br>
+                            ${order.phone ? '📞 ' + order.phone + '<br>' : ''}
+                            ${order.address}
+                        </div>
+                    `);
+                    infoWindow.open(routeMap, marker);
+                });
+                routeMarkersByDriver[driverId].push(marker);
+            });
         }
 
-        function getRandomColor() {
-            const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'];
-            return colors[Math.floor(Math.random() * colors.length)];
+        function hideDriverRoute(driverId) {
+            if (routeRenderers[driverId]) {
+                routeRenderers[driverId].setMap(null);
+                delete routeRenderers[driverId];
+            }
+            if (routeMarkersByDriver[driverId]) {
+                routeMarkersByDriver[driverId].forEach(marker => marker.setMap(null));
+                delete routeMarkersByDriver[driverId];
+            }
+        }
+
+        function clearRoutes() {
+            Object.keys(routeRenderers).forEach(driverId => hideDriverRoute(driverId));
+            Object.keys(ordersByDriver).forEach(driverId => {
+                if (driverId !== 'unassigned') {
+                    setToggleState(driverId, false);
+                }
+            });
+        }
+
+        function getDriverColor(driverId) {
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFD93D', '#A66DD4', '#F4A261'];
+            const idNum = parseInt(driverId, 10) || 0;
+            return colors[idNum % colors.length];
+        }
+
+        function setToggleState(driverId, isVisible) {
+            const btn = document.getElementById(`routeToggleBtn-${driverId}`);
+            if (!btn) return;
+            btn.classList.toggle('btn-primary', isVisible);
+            btn.classList.toggle('btn-outline-primary', !isVisible);
+            btn.innerHTML = isVisible ? '<i class="bi bi-map"></i> إخفاء المسار' : '<i class="bi bi-map"></i> عرض المسار';
         }
 
         google.maps.event.addDomListener(window, 'load', initRouteMap);
