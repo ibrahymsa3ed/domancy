@@ -12,6 +12,22 @@ function haversineDistanceKm($lat1, $lon1, $lat2, $lon2) {
     return $earthRadius * $c;
 }
 
+function extractTown($address, $town = null) {
+    if (!empty($town)) {
+        return mb_strtolower(trim((string) $town));
+    }
+    $address = trim((string) $address);
+    if ($address === '') {
+        return 'unknown';
+    }
+    $parts = preg_split('/[,،\-–\|]+/', $address);
+    $parts = array_values(array_filter(array_map('trim', $parts)));
+    if (empty($parts)) {
+        return 'unknown';
+    }
+    return mb_strtolower($parts[count($parts) - 1]);
+}
+
 $message = '';
 $messageType = '';
 $selected_date = $_POST['order_date'] ?? $_GET['date'] ?? date('Y-m-d');
@@ -121,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $ordersStmt = getDB()->prepare("
-                    SELECT o.id, c.id AS customer_id, c.latitude, c.longitude
+                    SELECT o.id, c.id AS customer_id, c.latitude, c.longitude, c.address, c.town
                     FROM daily_orders o
                     JOIN customers c ON o.customer_id = c.id
                     WHERE o.order_date = ? AND o.driver_id IS NULL
@@ -129,62 +145,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $ordersStmt->execute([$order_date]);
                 $unassignedOrders = $ordersStmt->fetchAll();
 
+                $assignedStmt = getDB()->prepare("
+                    SELECT o.id, o.driver_id, c.latitude, c.longitude, c.address, c.town
+                    FROM daily_orders o
+                    JOIN customers c ON o.customer_id = c.id
+                    WHERE o.order_date = ? AND o.driver_id IS NOT NULL
+                ");
+                $assignedStmt->execute([$order_date]);
+                $assignedOrders = $assignedStmt->fetchAll();
+
                 if (empty($unassignedOrders)) {
                     $message = "لا توجد طلبات غير معينة للتوزيع";
                     $messageType = "info";
                 } else {
                     $driverStates = [];
+                    $driverTowns = [];
+                    $assignedCountByDriver = [];
+
+                    foreach ($assignedOrders as $order) {
+                        $driverId = (int) $order['driver_id'];
+                        if (!isset($assignedCountByDriver[$driverId])) {
+                            $assignedCountByDriver[$driverId] = 0;
+                        }
+                        $assignedCountByDriver[$driverId] += 1;
+
+                        $town = extractTown($order['address'] ?? '', $order['town'] ?? null);
+                        if (!isset($driverTowns[$driverId])) {
+                            $driverTowns[$driverId] = [];
+                        }
+                        $driverTowns[$driverId][$town] = true;
+                    }
+
                     foreach ($drivers as $driver) {
+                        $driverId = (int) $driver['id'];
+                        $assignedCount = $assignedCountByDriver[$driverId] ?? 0;
+                        $remainingCapacity = max(0, (int) $driver['capacity'] - $assignedCount);
+
+                        $lastLat = (float) $factory['latitude'];
+                        $lastLng = (float) $factory['longitude'];
+                        foreach ($assignedOrders as $order) {
+                            if ((int) $order['driver_id'] === $driverId) {
+                                $lastLat = (float) $order['latitude'];
+                                $lastLng = (float) $order['longitude'];
+                            }
+                        }
+
                         $driverStates[] = [
-                            'id' => (int) $driver['id'],
-                            'capacity' => (int) $driver['capacity'],
-                            'last_lat' => (float) $factory['latitude'],
-                            'last_lng' => (float) $factory['longitude'],
+                            'id' => $driverId,
+                            'capacity' => $remainingCapacity,
+                            'last_lat' => $lastLat,
+                            'last_lng' => $lastLng,
                         ];
                     }
 
                     $assignments = [];
                     $remainingOrders = $unassignedOrders;
 
-                    while (!empty($remainingOrders)) {
-                        $madeAssignment = false;
-                        foreach ($driverStates as $index => $state) {
-                            if ($state['capacity'] <= 0 || empty($remainingOrders)) {
-                                continue;
-                            }
+                    // Group by town (from address)
+                    $ordersByTown = [];
+                    foreach ($remainingOrders as $order) {
+                        $town = extractTown($order['address'] ?? '', $order['town'] ?? null);
+                        if (!isset($ordersByTown[$town])) {
+                            $ordersByTown[$town] = [];
+                        }
+                        $ordersByTown[$town][] = $order;
+                    }
 
-                            $nearestIndex = null;
-                            $nearestDistance = null;
-                            foreach ($remainingOrders as $orderIndex => $order) {
+                    // Sort towns by number of orders (largest first)
+                    uasort($ordersByTown, function($a, $b) {
+                        return count($b) <=> count($a);
+                    });
+
+                    foreach ($ordersByTown as $town => $townOrders) {
+                        foreach ($townOrders as $order) {
+                            $bestIndex = null;
+                            $bestScore = null;
+
+                            foreach ($driverStates as $index => $state) {
+                                if ($state['capacity'] <= 0) {
+                                    continue;
+                                }
+
+                                $driverId = $state['id'];
+                                $sameTown = isset($driverTowns[$driverId][$town]);
                                 $distance = haversineDistanceKm(
                                     $state['last_lat'],
                                     $state['last_lng'],
                                     (float) $order['latitude'],
                                     (float) $order['longitude']
                                 );
-                                if ($nearestDistance === null || $distance < $nearestDistance) {
-                                    $nearestDistance = $distance;
-                                    $nearestIndex = $orderIndex;
+                                $score = ($sameTown ? 0 : 1000) + $distance;
+
+                                if ($bestScore === null || $score < $bestScore) {
+                                    $bestScore = $score;
+                                    $bestIndex = $index;
                                 }
                             }
 
-                            if ($nearestIndex !== null) {
-                                $selected = $remainingOrders[$nearestIndex];
+                            if ($bestIndex !== null) {
+                                $selected = $order;
                                 $assignments[] = [
                                     'order_id' => (int) $selected['id'],
-                                    'driver_id' => $state['id'],
+                                    'driver_id' => $driverStates[$bestIndex]['id'],
                                 ];
-                                $driverStates[$index]['capacity'] -= 1;
-                                $driverStates[$index]['last_lat'] = (float) $selected['latitude'];
-                                $driverStates[$index]['last_lng'] = (float) $selected['longitude'];
-                                unset($remainingOrders[$nearestIndex]);
-                                $remainingOrders = array_values($remainingOrders);
-                                $madeAssignment = true;
+                                $driverStates[$bestIndex]['capacity'] -= 1;
+                                $driverStates[$bestIndex]['last_lat'] = (float) $selected['latitude'];
+                                $driverStates[$bestIndex]['last_lng'] = (float) $selected['longitude'];
+                                $driverTowns[$driverStates[$bestIndex]['id']][$town] = true;
                             }
-                        }
-
-                        if (!$madeAssignment) {
-                            break;
                         }
                     }
 
@@ -615,14 +683,19 @@ require_once 'header.php';
 
             todayOrders.forEach(order => {
                 const isAssigned = !!order.driver_id;
+                const pinColor = isAssigned ? getDriverColor(order.driver_id) : '#6c757d';
                 const marker = new google.maps.Marker({
                     position: { lat: parseFloat(order.latitude), lng: parseFloat(order.longitude) },
                     map: routeMap,
                     title: order.customer_name,
                     icon: {
-                        url: isAssigned
-                            ? 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png'
-                            : 'http://maps.google.com/mapfiles/ms/icons/gray-dot.png'
+                        path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z",
+                        fillColor: pinColor,
+                        fillOpacity: 1,
+                        strokeColor: '#ffffff',
+                        strokeWeight: 1,
+                        scale: 1.2,
+                        anchor: new google.maps.Point(12, 22)
                     }
                 });
                 marker.addListener('click', () => {
@@ -680,3 +753,4 @@ require_once 'header.php';
         google.maps.event.addDomListener(window, 'load', initRouteMap);
     </script>
 <?php require_once 'footer.php'; ?>
+

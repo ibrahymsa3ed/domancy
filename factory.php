@@ -203,3 +203,4 @@ require_once 'header.php';
         google.maps.event.addDomListener(window, 'load', initMap);
     </script>
 <?php require_once 'footer.php'; ?>
+

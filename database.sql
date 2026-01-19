@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS customers (
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(20),
     address TEXT NOT NULL,
+    town VARCHAR(255),
     latitude DECIMAL(10, 8) NOT NULL,
     longitude DECIMAL(11, 8) NOT NULL,
     notes TEXT,

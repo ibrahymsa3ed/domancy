@@ -14,11 +14,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $latitude = $_POST['latitude'] ?? '';
             $longitude = $_POST['longitude'] ?? '';
             $notes = $_POST['notes'] ?? '';
+            $town = $_POST['town'] ?? '';
 
             if ($name && $address && $latitude && $longitude) {
                 try {
-                    $stmt = getDB()->prepare("INSERT INTO customers (name, phone, address, latitude, longitude, notes) VALUES (?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$name, $phone, $address, $latitude, $longitude, $notes]);
+                    $stmt = getDB()->prepare("INSERT INTO customers (name, phone, address, town, latitude, longitude, notes) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    $stmt->execute([$name, $phone, $address, $town, $latitude, $longitude, $notes]);
                     $message = "تم إضافة العميل بنجاح";
                     $messageType = "success";
                 } catch (PDOException $e) {
@@ -96,6 +97,7 @@ require_once 'header.php';
                             </div>
                             <input type="hidden" name="latitude" id="latitude">
                             <input type="hidden" name="longitude" id="longitude">
+                            <input type="hidden" name="town" id="town">
                             <button type="submit" class="btn btn-primary w-100">
                                 <i class="bi bi-check-circle"></i> إضافة عميل
                             </button>
@@ -131,7 +133,7 @@ require_once 'header.php';
                                                 <td><?php echo htmlspecialchars($customer['phone'] ?? '-'); ?></td>
                                                 <td><?php echo htmlspecialchars($customer['address']); ?></td>
                                                 <td>
-                                                    <form method="POST" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من حذف هذا العميل؟');">
+                                                    <form method="POST" style="display: inline;">
                                                         <input type="hidden" name="action" value="delete">
                                                         <input type="hidden" name="id" value="<?php echo $customer['id']; ?>">
                                                         <button type="submit" class="btn btn-sm btn-danger">
@@ -197,6 +199,17 @@ require_once 'header.php';
 
                     geocoder = new google.maps.Geocoder();
 
+                    function getTownFromComponents(components) {
+                        const typesPriority = ['locality', 'administrative_area_level_2', 'administrative_area_level_1'];
+                        for (const type of typesPriority) {
+                            const comp = components.find(c => c.types && c.types.includes(type));
+                            if (comp) {
+                                return comp.long_name;
+                            }
+                        }
+                        return '';
+                    }
+
                     autocomplete.addListener('place_changed', function() {
                         const place = autocomplete.getPlace();
                         if (place.geometry) {
@@ -204,6 +217,7 @@ require_once 'header.php';
                             const lng = place.geometry.location.lng();
                             document.getElementById('latitude').value = lat;
                             document.getElementById('longitude').value = lng;
+                            document.getElementById('town').value = place.address_components ? getTownFromComponents(place.address_components) : '';
                             // Update address field with formatted address
                             if (place.formatted_address) {
                                 addressInput.value = place.formatted_address;
@@ -280,6 +294,7 @@ require_once 'header.php';
                     geocoder.geocode({ location: position }, function(results, status) {
                         if (status === 'OK' && results[0]) {
                             document.getElementById('addressInput').value = results[0].formatted_address;
+                            document.getElementById('town').value = results[0].address_components ? getTownFromComponents(results[0].address_components) : '';
                         }
                     });
                 }
@@ -296,6 +311,7 @@ require_once 'header.php';
                     geocoder.geocode({ location: event.latLng }, function(results, status) {
                         if (status === 'OK' && results[0]) {
                             document.getElementById('addressInput').value = results[0].formatted_address;
+                            document.getElementById('town').value = results[0].address_components ? getTownFromComponents(results[0].address_components) : '';
                         }
                     });
                 }
@@ -375,3 +391,4 @@ require_once 'header.php';
         });
     </script>
 <?php require_once 'footer.php'; ?>
+
