@@ -295,6 +295,11 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'reports.php' ? 'active' : ''; ?>" href="reports.php">
+                            <i class="bi bi-clipboard-data"></i> التقارير
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'factory.php' ? 'active' : ''; ?>" href="factory.php">
                             <i class="bi bi-building"></i> موقع المصنع
                         </a>

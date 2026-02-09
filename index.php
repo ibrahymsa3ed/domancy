@@ -245,18 +245,21 @@ require_once 'header.php';
         });
 
         customerData.forEach(customer => {
-            const markerColor = customer.has_order_today ? 'green' : 'gray';
             const lat = parseFloat(customer.latitude);
             const lng = parseFloat(customer.longitude);
             const hasValidCoords = Number.isFinite(lat) && Number.isFinite(lng);
             const position = hasValidCoords ? { lat, lng } : factoryLocation;
+            const orderInfo = todayOrdersByCustomer[customer.id] || null;
+            const pinColor = orderInfo && orderInfo.driver_id
+                ? getDriverColor(orderInfo.driver_id)
+                : '#6c757d';
             const marker = new google.maps.Marker({
                 position: position,
                 map: map,
                 title: customer.name,
                 icon: {
                     path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z",
-                    fillColor: markerColor === 'green' ? '#28a745' : '#6c757d',
+                    fillColor: pinColor,
                     fillOpacity: 1,
                     strokeColor: '#ffffff',
                     strokeWeight: 1,
@@ -265,8 +268,6 @@ require_once 'header.php';
                 },
                 visible: true
             });
-
-            const orderInfo = todayOrdersByCustomer[customer.id] || null;
             const driverLabel = orderInfo
                 ? `السائق: ${orderInfo.driver_name ? orderInfo.driver_name : 'غير معين'}`
                 : null;

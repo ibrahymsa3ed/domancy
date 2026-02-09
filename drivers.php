@@ -14,11 +14,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $color = $_POST['color'] ?? '#e6194b';
             $capacity = $_POST['capacity'] ?? 10;
             $is_active = isset($_POST['is_active']) ? 1 : 0;
+            $governorate = $_POST['governorate'] ?? '';
 
             if ($name) {
                 try {
-                    $stmt = getDB()->prepare("INSERT INTO drivers (name, phone, car_number, color, capacity, is_active) VALUES (?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$name, $phone, $car_number, $color, $capacity, $is_active]);
+                    $stmt = getDB()->prepare("INSERT INTO drivers (name, phone, car_number, color, governorate, capacity, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    $stmt->execute([$name, $phone, $car_number, $color, $governorate, $capacity, $is_active]);
                     $message = "تم إضافة السائق بنجاح";
                     $messageType = "success";
                 } catch (PDOException $e) {
@@ -133,6 +134,10 @@ require_once 'header.php';
                                 <label class="form-label">القدرة (عدد الطلبات في اليوم)</label>
                                 <input type="number" class="form-control" name="capacity" value="10" min="1">
                             </div>
+                            <div class="mb-3">
+                                <label class="form-label">المحافظة</label>
+                                <input type="text" class="form-control" name="governorate" placeholder="مثال: القاهرة">
+                            </div>
                             <div class="mb-3 form-check">
                                 <input type="checkbox" class="form-check-input" name="is_active" id="is_active" checked>
                                 <label class="form-check-label" for="is_active">
@@ -160,6 +165,7 @@ require_once 'header.php';
                                         <th>الهاتف</th>
                                         <th>رقم السيارة</th>
                                         <th>القدرة</th>
+                                        <th>المحافظة</th>
                                         <th>اللون</th>
                                         <th>الحالة</th>
                                         <th>الإجراءات</th>
@@ -177,6 +183,7 @@ require_once 'header.php';
                                                 <td><?php echo htmlspecialchars($driver['phone'] ?? '-'); ?></td>
                                                 <td><?php echo htmlspecialchars($driver['car_number'] ?? '-'); ?></td>
                                                 <td><?php echo $driver['capacity']; ?> طلبات في اليوم</td>
+                                                <td><?php echo !empty($driver['governorate']) ? htmlspecialchars($driver['governorate']) : '-'; ?></td>
                                                 <td>
                                                     <div class="d-flex align-items-center gap-2">
                                                         <span class="badge" style="background-color: <?php echo htmlspecialchars($driver['color'] ?? '#e6194b'); ?>;">
