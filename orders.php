@@ -632,7 +632,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Get all customers
-$customers = getDB()->query("SELECT * FROM customers ORDER BY name")->fetchAll();
+$customers = getDB()->query("SELECT * FROM customers ORDER BY CAST(customer_number AS UNSIGNED), customer_number")->fetchAll();
 
 // Get today's orders
 $orders = getDB()->prepare("
@@ -689,84 +689,91 @@ require_once 'header.php';
                     <div class="card-body">
                         <form method="POST" id="createOrdersForm">
                             <input type="hidden" name="action" value="create_orders">
-                            <div class="row">
+                            <div id="hiddenCustomerInputs"></div>
+                            <div class="row mb-3">
                                 <div class="col-md-3">
                                     <label class="form-label">التاريخ</label>
                                     <input type="date" class="form-control" name="order_date" value="<?php echo $selected_date; ?>" required>
                                 </div>
-                                <div class="col-md-9">
-                                    <label class="form-label">اختر العملاء</label>
-                                    <select class="form-select" id="customerSelect" name="customer_ids[]" multiple>
-                                        <?php foreach ($customers as $customer): ?>
-                                            <option value="<?php echo $customer['id']; ?>" <?php echo in_array($customer['id'], $orderedCustomerIds) ? 'selected' : ''; ?>>
-                                                    #<?php echo $customer['id']; ?> - <?php echo htmlspecialchars($customer['name']); ?> - <?php echo htmlspecialchars($customer['address']); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
+                                <div class="col-md-9 d-flex align-items-end gap-2">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-check-circle"></i> حفظ الطلبات
+                                    </button>
+                                    <span class="text-muted">العملاء المختارون: <strong id="selectedCustomersCount">0</strong></span>
                                 </div>
                             </div>
-                            <div class="row mt-3">
-                                <div class="col-md-4">
-                                    <label class="form-label">العملاء المختارون</label>
-                                    <div id="selectedCustomersList" class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
-                                        <div class="text-muted small">لا يوجد عملاء مختارين</div>
-                                    </div>
-                                </div>
-                                <div class="col-md-8 d-flex align-items-end">
-                                    <div class="text-muted">
-                                        عدد العملاء المختارين: <span id="selectedCustomersCount">0</span>
-                                    </div>
+                            <div class="mb-2">
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                    <input type="text" class="form-control" id="customerSearchInput" placeholder="بحث برقم العميل أو الاسم أو الهاتف أو العنوان...">
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-primary mt-3">
-                                <i class="bi bi-check-circle"></i> حفظ الطلبات
-                            </button>
+                            <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                                <table class="table table-hover table-sm mb-0" id="customerPickerTable">
+                                    <thead class="sticky-top bg-white">
+                                        <tr>
+                                            <th style="width: 30px;"><input type="checkbox" id="customerSelectAll" title="تحديد الكل"></th>
+                                            <th>رقم</th>
+                                            <th>الاسم</th>
+                                            <th>الهاتف</th>
+                                            <th>العنوان</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="customerPickerBody"></tbody>
+                                </table>
+                            </div>
+                            <nav class="d-flex justify-content-between align-items-center mt-2">
+                                <small class="text-muted" id="customerPageInfo"></small>
+                                <ul class="pagination pagination-sm mb-0" id="customerPagination"></ul>
+                            </nav>
                         </form>
-                        <form method="POST" class="mt-2">
+                        <hr>
+                        <form method="POST" id="autoAssignForm">
                             <input type="hidden" name="action" value="auto_assign">
                             <input type="hidden" name="order_date" value="<?php echo $selected_date; ?>">
-                            <div class="row align-items-end g-2">
-                                <div class="col-md-4">
+                            <div id="hiddenDriverInputs"></div>
+                            <div class="row align-items-end g-2 mb-2">
+                                <div class="col-md-3">
                                     <label class="form-label">عدد السيارات للتوزيع</label>
                                     <input type="number" class="form-control" name="cars_count" min="1" max="<?php echo count($drivers); ?>" value="<?php echo max(1, count($drivers)); ?>">
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">اختر السائقين للتوزيع</label>
-                                    <select class="form-select" id="driverSelect" name="driver_ids[]" multiple>
-                                        <?php foreach ($drivers as $driver): ?>
-                                            <option value="<?php echo $driver['id']; ?>" data-color="<?php echo htmlspecialchars($driver['color'] ?? '#6c757d'); ?>">
-                                                <?php echo htmlspecialchars($driver['name']); ?>
-                                                <?php if (!empty($driver['governorate'])): ?>
-                                                    (<?php echo htmlspecialchars($driver['governorate']); ?>)
-                                                <?php endif; ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <div class="mt-2">
-                                        <label class="form-label">السائقون المختارون</label>
-                                        <div id="selectedDriversList" class="border rounded p-2" style="max-height: 140px; overflow-y: auto;">
-                                            <div class="text-muted small">لا يوجد سائقين مختارين</div>
-                                        </div>
-                                        <div class="text-muted small mt-1">
-                                            عدد السائقين المختارين: <span id="selectedDriversCount">0</span>
-                                        </div>
-                                        <small class="text-muted">اتركها فارغة لتوزيع على جميع السائقين</small>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <div class="form-check mt-4">
                                         <input class="form-check-input" type="checkbox" id="redistributeSelected" name="redistribute_selected" value="1" checked>
-                                        <label class="form-check-label" for="redistributeSelected">
-                                            إعادة توزيع طلبات السائقين المختارين
-                                        </label>
+                                        <label class="form-check-label" for="redistributeSelected">إعادة توزيع</label>
                                     </div>
                                 </div>
-                                <div class="col-md-4">
-                            <button type="submit" class="btn btn-outline-primary">
-                                <i class="bi bi-shuffle"></i> توزيع تلقائي حسب المسار
-                            </button>
+                                <div class="col-md-3 d-flex align-items-end gap-2">
+                                    <button type="submit" class="btn btn-outline-primary">
+                                        <i class="bi bi-shuffle"></i> توزيع تلقائي
+                                    </button>
+                                    <span class="text-muted small">المختارون: <strong id="selectedDriversCount">0</strong></span>
                                 </div>
                             </div>
+                            <div class="mb-2">
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                    <input type="text" class="form-control" id="driverSearchInput" placeholder="بحث بالاسم أو الهاتف...">
+                                </div>
+                            </div>
+                            <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                                <table class="table table-hover table-sm mb-0" id="driverPickerTable">
+                                    <thead class="sticky-top bg-white">
+                                        <tr>
+                                            <th style="width: 30px;"><input type="checkbox" id="driverSelectAll" title="تحديد الكل"></th>
+                                            <th>الاسم</th>
+                                            <th>الهاتف</th>
+                                            <th>السعة</th>
+                                            <th>اللون</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="driverPickerBody"></tbody>
+                                </table>
+                            </div>
+                            <nav class="d-flex justify-content-between align-items-center mt-2">
+                                <small class="text-muted" id="driverPageInfo"></small>
+                                <ul class="pagination pagination-sm mb-0" id="driverPagination"></ul>
+                            </nav>
                         </form>
                     </div>
                 </div>
@@ -903,53 +910,7 @@ require_once 'header.php';
         </div>
     </div>
 
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
     <style>
-        .select2-container {
-            width: 100% !important;
-        }
-
-        .select2-container--default .select2-selection--multiple {
-            min-height: 38px;
-            padding-right: 28px;
-        }
-
-        .select2-container--default .select2-selection--multiple .select2-selection__rendered {
-            display: none;
-        }
-
-        .select2-container--default .select2-selection--multiple .select2-selection__placeholder {
-            display: block;
-            color: #6c757d;
-        }
-
-        .select2-container--default .select2-selection--multiple {
-            position: relative;
-            cursor: pointer;
-        }
-
-        .select2-container--default .select2-selection--multiple::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            right: 10px;
-            width: 0;
-            height: 0;
-            margin-top: -2px;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 5px solid #6c757d;
-            pointer-events: none;
-        }
-
-        .select2-dropdown {
-            z-index: 2000;
-        }
-
-        #selectedCustomersList {
-            direction: ltr;
-            text-align: right;
-        }
         .driver-color-badge {
             color: #ffffff;
         }
@@ -962,122 +923,183 @@ require_once 'header.php';
             vertical-align: middle;
             border: 1px solid rgba(255, 255, 255, 0.8);
         }
+        .cursor-pointer { cursor: pointer; }
+        #customerPickerTable thead th, #driverPickerTable thead th {
+            font-size: 0.85rem;
+            padding: 0.4rem 0.5rem;
+        }
     </style>
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-
-
     <script>
-        // Enable searchable multi-select for customers
-        $(document).ready(function() {
-            $('#customerSelect').select2({
-                placeholder: 'ابحث واختر العملاء',
-                width: '100%'
-            });
-            $('#driverSelect').select2({
-                placeholder: 'اختر السائقين',
-                width: '100%'
-            });
-            updateSelectedCustomersList();
-            updateSelectedDriversList();
-            $('#customerSelect').on('change', updateSelectedCustomersList);
-            $('#driverSelect').on('change', updateSelectedDriversList);
+        const allCustomers = <?php echo json_encode(array_map(function($c) use ($orderedCustomerIds) {
+            return [
+                'id' => $c['id'],
+                'cn' => $c['customer_number'] ?? (string)$c['id'],
+                'name' => $c['name'],
+                'phone' => $c['phone'] ?? '',
+                'address' => $c['address'],
+                'sel' => in_array($c['id'], $orderedCustomerIds)
+            ];
+        }, $customers), JSON_UNESCAPED_UNICODE); ?>;
 
-            const selectedDateInput = document.querySelector('input[name="order_date"]');
-            const selectedDate = selectedDateInput ? selectedDateInput.value : '';
-            const driverStorageKey = selectedDate ? `selectedDrivers:${selectedDate}` : 'selectedDrivers';
+        const allDriversData = <?php echo json_encode(array_map(function($d) {
+            return [
+                'id' => $d['id'],
+                'name' => $d['name'],
+                'phone' => $d['phone'] ?? '',
+                'capacity' => $d['capacity'],
+                'color' => $d['color'] ?? '#6c757d'
+            ];
+        }, $drivers), JSON_UNESCAPED_UNICODE); ?>;
 
-            const savedDriverIds = localStorage.getItem(driverStorageKey);
-            if (savedDriverIds) {
-                const ids = savedDriverIds.split(',').filter(Boolean);
-                $('#driverSelect').val(ids).trigger('change');
+        const customerSelectedIds = new Set(allCustomers.filter(c => c.sel).map(c => c.id));
+        const driverSelectedIds = new Set();
+        let customerPage = 1, driverPage = 1;
+        const CUSTOMER_PER_PAGE = 10, DRIVER_PER_PAGE = 20;
+        let customerSearch = '', driverSearch = '';
+
+        function filterItems(items, q, fields) {
+            if (!q) return items;
+            q = q.toLowerCase();
+            return items.filter(item => fields.some(f => (item[f] || '').toString().toLowerCase().includes(q)));
+        }
+
+        function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+        function syncHiddenInputs(containerId, name, idSet) {
+            const c = document.getElementById(containerId);
+            c.innerHTML = '';
+            idSet.forEach(id => { const inp = document.createElement('input'); inp.type = 'hidden'; inp.name = name; inp.value = id; c.appendChild(inp); });
+        }
+
+        function renderPagination(elId, current, total, onPage) {
+            const ul = document.getElementById(elId);
+            ul.innerHTML = '';
+            if (total <= 1) return;
+            const mkLi = (label, pg, disabled, active) => {
+                const li = document.createElement('li');
+                li.className = 'page-item' + (disabled ? ' disabled' : '') + (active ? ' active' : '');
+                const a = document.createElement('a');
+                a.className = 'page-link'; a.href = '#'; a.textContent = label;
+                a.addEventListener('click', e => { e.preventDefault(); if (!disabled && !active) onPage(pg); });
+                li.appendChild(a); ul.appendChild(li);
+            };
+            mkLi('‹', current - 1, current <= 1, false);
+            let s = Math.max(1, current - 2), e = Math.min(total, current + 2);
+            if (s > 1) mkLi('…', 1, true, false);
+            for (let p = s; p <= e; p++) mkLi(p, p, false, p === current);
+            if (e < total) mkLi('…', total, true, false);
+            mkLi('›', current + 1, current >= total, false);
+        }
+
+        function renderPickerTable(cfg) {
+            const filtered = filterItems(cfg.items, cfg.search, cfg.searchFields);
+            const total = filtered.length;
+            const totalPages = Math.max(1, Math.ceil(total / cfg.perPage));
+            if (cfg.getPage() > totalPages) cfg.setPage(totalPages);
+            const cp = cfg.getPage();
+            const start = (cp - 1) * cfg.perPage;
+            const page = filtered.slice(start, start + cfg.perPage);
+
+            const tbody = document.getElementById(cfg.tbodyId);
+            tbody.innerHTML = '';
+            if (page.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="${cfg.colCount}" class="text-center text-muted py-3">لا يوجد نتائج</td></tr>`;
+            } else {
+                page.forEach(item => {
+                    const checked = cfg.selectedSet.has(item.id) ? 'checked' : '';
+                    const hl = cfg.selectedSet.has(item.id) ? (' ' + cfg.highlightClass) : '';
+                    tbody.innerHTML += cfg.rowHtml(item, checked, hl);
+                });
             }
 
-            $('#driverSelect').on('change', function() {
-                const selected = Array.from(this.selectedOptions).map(opt => opt.value);
-                localStorage.setItem(driverStorageKey, selected.join(','));
-            });
+            document.getElementById(cfg.pageInfoId).textContent = `صفحة ${cp} من ${totalPages} (${total} ${cfg.label})`;
+            renderPagination(cfg.paginationId, cp, totalPages, p => { cfg.setPage(p); cfg.render(); });
+            document.getElementById(cfg.countId).textContent = cfg.selectedSet.size;
+            syncHiddenInputs(cfg.hiddenContainerId, cfg.hiddenName, cfg.selectedSet);
 
+            const selectAllCb = document.getElementById(cfg.selectAllId);
+            const pageIds = page.map(i => i.id);
+            selectAllCb.checked = pageIds.length > 0 && pageIds.every(id => cfg.selectedSet.has(id));
+            selectAllCb.indeterminate = !selectAllCb.checked && pageIds.some(id => cfg.selectedSet.has(id));
+
+            tbody.querySelectorAll(`tr[data-${cfg.dataAttr}]`).forEach(tr => {
+                tr.addEventListener('click', function(e) {
+                    if (e.target.tagName === 'INPUT') return;
+                    const cb = tr.querySelector(`.${cfg.cbClass}`);
+                    cb.checked = !cb.checked;
+                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+            });
+            tbody.querySelectorAll(`.${cfg.cbClass}`).forEach(cb => {
+                cb.addEventListener('change', function() {
+                    const id = parseInt(this.value);
+                    if (this.checked) cfg.selectedSet.add(id); else cfg.selectedSet.delete(id);
+                    cfg.render();
+                });
+            });
+        }
+
+        function renderCustomerTable() {
+            renderPickerTable({
+                items: allCustomers, search: customerSearch, searchFields: ['cn', 'name', 'phone', 'address'],
+                perPage: CUSTOMER_PER_PAGE, getPage: () => customerPage, setPage: p => customerPage = p,
+                tbodyId: 'customerPickerBody', pageInfoId: 'customerPageInfo', paginationId: 'customerPagination',
+                countId: 'selectedCustomersCount', hiddenContainerId: 'hiddenCustomerInputs', hiddenName: 'customer_ids[]',
+                selectedSet: customerSelectedIds, selectAllId: 'customerSelectAll',
+                highlightClass: 'table-success', dataAttr: 'cid', cbClass: 'cust-cb', colCount: 5, label: 'عميل',
+                render: renderCustomerTable,
+                rowHtml: (c, checked, hl) => `<tr class="cursor-pointer${hl}" data-cid="${c.id}">
+                    <td><input type="checkbox" class="form-check-input cust-cb" value="${c.id}" ${checked}></td>
+                    <td>${esc(c.cn)}</td><td>${esc(c.name)}</td><td>${esc(c.phone) || '-'}</td>
+                    <td class="text-truncate" style="max-width:200px;" title="${esc(c.address)}">${esc(c.address)}</td></tr>`
+            });
+        }
+
+        function renderDriverTable() {
+            renderPickerTable({
+                items: allDriversData, search: driverSearch, searchFields: ['name', 'phone'],
+                perPage: DRIVER_PER_PAGE, getPage: () => driverPage, setPage: p => driverPage = p,
+                tbodyId: 'driverPickerBody', pageInfoId: 'driverPageInfo', paginationId: 'driverPagination',
+                countId: 'selectedDriversCount', hiddenContainerId: 'hiddenDriverInputs', hiddenName: 'driver_ids[]',
+                selectedSet: driverSelectedIds, selectAllId: 'driverSelectAll',
+                highlightClass: 'table-info', dataAttr: 'did', cbClass: 'drv-cb', colCount: 5, label: 'سائق',
+                render: renderDriverTable,
+                rowHtml: (d, checked, hl) => `<tr class="cursor-pointer${hl}" data-did="${d.id}">
+                    <td><input type="checkbox" class="form-check-input drv-cb" value="${d.id}" ${checked}></td>
+                    <td>${esc(d.name)}</td><td>${esc(d.phone) || '-'}</td><td>${d.capacity}</td>
+                    <td><span class="driver-color-dot" style="background-color:${d.color};"></span></td></tr>`
+            });
+        }
+
+        document.getElementById('customerSearchInput').addEventListener('input', function() { customerSearch = this.value; customerPage = 1; renderCustomerTable(); });
+        document.getElementById('driverSearchInput').addEventListener('input', function() { driverSearch = this.value; driverPage = 1; renderDriverTable(); });
+        document.getElementById('customerSelectAll').addEventListener('change', function() {
+            const page = filterItems(allCustomers, customerSearch, ['cn','name','phone','address']).slice((customerPage-1)*CUSTOMER_PER_PAGE, customerPage*CUSTOMER_PER_PAGE);
+            page.forEach(c => { if (this.checked) customerSelectedIds.add(c.id); else customerSelectedIds.delete(c.id); });
+            renderCustomerTable();
+        });
+        document.getElementById('driverSelectAll').addEventListener('change', function() {
+            const page = filterItems(allDriversData, driverSearch, ['name','phone']).slice((driverPage-1)*DRIVER_PER_PAGE, driverPage*DRIVER_PER_PAGE);
+            page.forEach(d => { if (this.checked) driverSelectedIds.add(d.id); else driverSelectedIds.delete(d.id); });
+            renderDriverTable();
         });
 
-        function updateSelectedCustomersList() {
-            const select = document.getElementById('customerSelect');
-            const list = document.getElementById('selectedCustomersList');
-            const count = document.getElementById('selectedCustomersCount');
-            const selectedOptions = Array.from(select.selectedOptions);
+        (function() {
+            const dateInput = document.querySelector('#autoAssignForm input[name="order_date"]');
+            const key = dateInput ? 'selectedDrivers:' + dateInput.value : 'selectedDrivers';
+            const saved = localStorage.getItem(key);
+            if (saved) saved.split(',').filter(Boolean).forEach(id => driverSelectedIds.add(parseInt(id)));
+        })();
 
-            if (!list || !count) return;
+        renderCustomerTable();
+        renderDriverTable();
 
-            list.innerHTML = '';
-            if (selectedOptions.length === 0) {
-                list.innerHTML = '<div class="text-muted small">لا يوجد عملاء مختارين</div>';
-                count.textContent = '0';
-                return;
-            }
-
-            selectedOptions.forEach(option => {
-                const item = document.createElement('div');
-                item.className = 'border-bottom py-1 d-flex justify-content-between align-items-center';
-
-                const label = document.createElement('span');
-                label.textContent = option.text;
-                item.appendChild(label);
-
-                const removeBtn = document.createElement('button');
-                removeBtn.type = 'button';
-                removeBtn.className = 'btn btn-sm btn-light border';
-                removeBtn.textContent = '×';
-                removeBtn.title = 'إزالة من القائمة';
-                removeBtn.addEventListener('click', () => {
-                    option.selected = false;
-                    $('#customerSelect').trigger('change');
-                });
-                item.appendChild(removeBtn);
-
-                list.appendChild(item);
-            });
-            count.textContent = selectedOptions.length;
-        }
-
-        function updateSelectedDriversList() {
-            const select = document.getElementById('driverSelect');
-            const list = document.getElementById('selectedDriversList');
-            const count = document.getElementById('selectedDriversCount');
-            if (!select || !list || !count) return;
-            const selectedOptions = Array.from(select.selectedOptions);
-
-            list.innerHTML = '';
-            if (selectedOptions.length === 0) {
-                list.innerHTML = '<div class="text-muted small">لا يوجد سائقين مختارين</div>';
-                count.textContent = '0';
-                return;
-            }
-
-            selectedOptions.forEach(option => {
-                const item = document.createElement('div');
-                item.className = 'border-bottom py-1 d-flex justify-content-between align-items-center';
-
-                const label = document.createElement('span');
-                const color = option.getAttribute('data-color') || '#6c757d';
-                label.innerHTML = `<span class="driver-color-dot" style="background-color: ${color};"></span>${option.text}`;
-                item.appendChild(label);
-
-                const removeBtn = document.createElement('button');
-                removeBtn.type = 'button';
-                removeBtn.className = 'btn btn-sm btn-light border';
-                removeBtn.textContent = '×';
-                removeBtn.title = 'إزالة من القائمة';
-                removeBtn.addEventListener('click', () => {
-                    option.selected = false;
-                    $('#driverSelect').trigger('change');
-                });
-                item.appendChild(removeBtn);
-
-                list.appendChild(item);
-            });
-
-            count.textContent = selectedOptions.length;
-        }
+        (function() {
+            const dateInput = document.querySelector('#autoAssignForm input[name="order_date"]');
+            const key = dateInput ? 'selectedDrivers:' + dateInput.value : 'selectedDrivers';
+            const observer = new MutationObserver(() => localStorage.setItem(key, Array.from(driverSelectedIds).join(',')));
+            observer.observe(document.getElementById('hiddenDriverInputs'), { childList: true });
+        })();
 
         const factoryLocation = <?php echo $factory ? json_encode(['lat' => floatval($factory['latitude']), 'lng' => floatval($factory['longitude'])]) : 'null'; ?>;
         const ordersByDriver = <?php echo json_encode($ordersByDriver, JSON_UNESCAPED_UNICODE); ?>;
