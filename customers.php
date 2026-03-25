@@ -167,41 +167,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Pagination + Sort
-$search = trim($_GET['q'] ?? '');
-$page = max(1, (int) ($_GET['page'] ?? 1));
-$perPage = 50;
-$offset = ($page - 1) * $perPage;
-
-$sortCol = $_GET['sort'] ?? 'customer_number';
-$sortDir = strtolower($_GET['dir'] ?? 'asc');
-$allowedSorts = ['customer_number', 'name', 'phone', 'address'];
-if (!in_array($sortCol, $allowedSorts)) $sortCol = 'customer_number';
-if (!in_array($sortDir, ['asc', 'desc'])) $sortDir = 'asc';
-
-$countSql = "SELECT COUNT(*) FROM customers";
-$dataSql = "SELECT * FROM customers";
-$params = [];
-
-if ($search !== '') {
-    $like = '%' . $search . '%';
-    $where = " WHERE (customer_number LIKE ? OR name LIKE ? OR address LIKE ? OR phone LIKE ?)";
-    $params = [$like, $like, $like, $like];
-    $countSql .= $where;
-    $dataSql .= $where;
-}
-
-$orderExpr = $sortCol === 'customer_number' ? "CAST(customer_number AS UNSIGNED) $sortDir, customer_number $sortDir" : "$sortCol $sortDir";
-$dataSql .= " ORDER BY $orderExpr LIMIT $perPage OFFSET $offset";
-
-$countStmt = getDB()->prepare($countSql);
-$countStmt->execute($params);
-$totalCustomers = (int) $countStmt->fetchColumn();
-$totalPages = max(1, (int) ceil($totalCustomers / $perPage));
-
-$dataStmt = getDB()->prepare($dataSql);
-$dataStmt->execute($params);
-$customers = $dataStmt->fetchAll();
+$allCustomers = getDB()->query("SELECT * FROM customers ORDER BY CAST(customer_number AS UNSIGNED), customer_number")->fetchAll();
+$totalCustomers = count($allCustomers);
 
 $pageTitle = APP_NAME . ' - العملاء';
 $googleMapsScript = 'places,geometry';
@@ -283,34 +250,18 @@ require_once 'header.php';
                     </div>
                     <div class="card-body p-0">
                         <div class="p-2">
-                            <form method="GET" class="d-flex gap-2" id="customerSearchForm">
-                                <input type="hidden" name="sort" value="<?php echo $sortCol; ?>">
-                                <input type="hidden" name="dir" value="<?php echo $sortDir; ?>">
-                                <input type="text" class="form-control" name="q" id="customerSearchInput" value="<?php echo htmlspecialchars($search); ?>" placeholder="بحث برقم العميل أو الاسم أو الهاتف أو العنوان...">
-                                <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i></button>
-                                <?php if ($search !== ''): ?>
-                                    <a href="customers.php?sort=<?php echo $sortCol; ?>&dir=<?php echo $sortDir; ?>" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i></a>
-                                <?php endif; ?>
-                            </form>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="text" class="form-control" id="customerSearchInput" placeholder="بحث برقم العميل أو الاسم أو الهاتف أو العنوان...">
+                            </div>
                         </div>
                         <div class="table-responsive">
-                            <?php
-                                $sortParams = ($search !== '' ? '&q=' . urlencode($search) : '');
-                                function sortUrl($col, $curCol, $curDir, $extra) {
-                                    $dir = ($col === $curCol && $curDir === 'asc') ? 'desc' : 'asc';
-                                    return '?sort=' . $col . '&dir=' . $dir . $extra;
-                                }
-                                function sortIcon($col, $curCol, $curDir) {
-                                    if ($col !== $curCol) return '';
-                                    return $curDir === 'asc' ? ' ▲' : ' ▼';
-                                }
-                            ?>
                             <table class="table table-hover mb-0">
                                 <thead>
                                     <tr>
-                                        <th><a href="<?php echo sortUrl('customer_number', $sortCol, $sortDir, $sortParams); ?>" class="text-decoration-none">رقم<?php echo sortIcon('customer_number', $sortCol, $sortDir); ?></a></th>
-                                        <th><a href="<?php echo sortUrl('name', $sortCol, $sortDir, $sortParams); ?>" class="text-decoration-none">الاسم<?php echo sortIcon('name', $sortCol, $sortDir); ?></a></th>
-                                        <th><a href="<?php echo sortUrl('phone', $sortCol, $sortDir, $sortParams); ?>" class="text-decoration-none">الهاتف<?php echo sortIcon('phone', $sortCol, $sortDir); ?></a></th>
+                                        <th class="sortable-th" data-col="customer_number">رقم <span id="sortIcon-customer_number">▲</span></th>
+                                        <th class="sortable-th" data-col="name">الاسم <span id="sortIcon-name"></span></th>
+                                        <th class="sortable-th" data-col="phone">الهاتف <span id="sortIcon-phone"></span></th>
                                         <th>العنوان</th>
                                         <th>رقم الموقع</th>
                                         <th>الرمز العالمي</th>
@@ -318,94 +269,30 @@ require_once 'header.php';
                                         <th></th>
                                     </tr>
                                 </thead>
-                                <tbody>
-                                    <?php if (empty($customers)): ?>
-                                        <tr><td colspan="8" class="text-center text-muted py-4">لا يوجد عملاء</td></tr>
-                                    <?php else: ?>
-                                        <?php foreach ($customers as $customer): ?>
-                                        <?php
-                                            $addressNumber = extractTrailingNumber($customer['address']);
-                                            $plusCode = encodePlusCode($customer['latitude'], $customer['longitude']);
-                                        ?>
-                                        <tr>
-                                            <td><?php echo htmlspecialchars($customer['customer_number']); ?></td>
-                                            <td><strong><?php echo htmlspecialchars($customer['name']); ?></strong></td>
-                                            <td><?php echo htmlspecialchars($customer['phone'] ?? '-'); ?></td>
-                                            <td class="text-truncate" style="max-width: 200px;" title="<?php echo htmlspecialchars($customer['address']); ?>"><?php echo htmlspecialchars($customer['address']); ?></td>
-                                            <td><?php echo $addressNumber !== '' ? htmlspecialchars($addressNumber) : '-'; ?></td>
-                                            <td><small><?php echo $plusCode !== '' ? htmlspecialchars($plusCode) : '-'; ?></small></td>
-                                            <td>
-                                                <?php if (is_numeric($customer['latitude']) && is_numeric($customer['longitude'])): ?>
-                                                    <?php
-                                                        $mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode($customer['latitude'] . ',' . $customer['longitude']);
-                                                        $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=' . rawurlencode($mapsUrl);
-                                                    ?>
-                                                    <img src="<?php echo $qrUrl; ?>" alt="QR" style="width: 40px; height: 40px;" loading="lazy">
-                                                <?php else: ?>
-                                                    -
-                                                <?php endif; ?>
-                                            </td>
-                                            <td>
-                                                <div class="d-flex gap-1">
-                                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="startEdit(<?php echo htmlspecialchars(json_encode($customer, JSON_UNESCAPED_UNICODE)); ?>)">
-                                                        <i class="bi bi-pencil"></i>
-                                                    </button>
-                                                    <form method="POST" class="d-inline delete-form" data-name="<?php echo htmlspecialchars($customer['name']); ?>">
-                                                        <input type="hidden" name="action" value="delete">
-                                                        <input type="hidden" name="id" value="<?php echo $customer['id']; ?>">
-                                                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-                                                    </form>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                        <?php endforeach; ?>
-                                    <?php endif; ?>
-                                </tbody>
+                                <tbody id="customerTableBody"></tbody>
                             </table>
                         </div>
-                        <?php if ($totalPages > 1): ?>
                         <div class="d-flex justify-content-between align-items-center p-2 border-top">
-                            <small class="text-muted">صفحة <?php echo $page; ?> من <?php echo $totalPages; ?></small>
+                            <small class="text-muted" id="customerPageInfo"></small>
                             <nav>
-                                <ul class="pagination pagination-sm mb-0">
-                                    <?php
-                                        $qParam = ($search !== '' ? '&q=' . urlencode($search) : '') . '&sort=' . $sortCol . '&dir=' . $sortDir;
-                                    ?>
-                                    <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-                                        <a class="page-link" href="?page=<?php echo $page - 1; ?><?php echo $qParam; ?>">‹</a>
-                                    </li>
-                                    <?php
-                                        $startP = max(1, $page - 2);
-                                        $endP = min($totalPages, $page + 2);
-                                        if ($startP > 1) echo '<li class="page-item disabled"><span class="page-link">…</span></li>';
-                                        for ($p = $startP; $p <= $endP; $p++):
-                                    ?>
-                                        <li class="page-item <?php echo $p === $page ? 'active' : ''; ?>">
-                                            <a class="page-link" href="?page=<?php echo $p; ?><?php echo $qParam; ?>"><?php echo $p; ?></a>
-                                        </li>
-                                    <?php endfor;
-                                        if ($endP < $totalPages) echo '<li class="page-item disabled"><span class="page-link">…</span></li>';
-                                    ?>
-                                    <li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
-                                        <a class="page-link" href="?page=<?php echo $page + 1; ?><?php echo $qParam; ?>">›</a>
-                                    </li>
-                                </ul>
+                                <ul class="pagination pagination-sm mb-0" id="customerPagination"></ul>
                             </nav>
                         </div>
-                        <?php endif; ?>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <style>
+        .sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+        .sortable-th:hover { background: #f0f0f0; }
+    </style>
     <script>
         let autocomplete, geocoder, map, marker;
         const defaultCenter = { lat: 30.0444, lng: 31.2357 };
 
-        window.gm_authFailure = function() {
-            showApiError();
-        };
+        window.gm_authFailure = function() { showApiError(); };
 
         function showApiError() {
             const el = document.getElementById('addressInput');
@@ -431,16 +318,14 @@ require_once 'header.php';
                 el.disabled = false;
                 if (typeof google !== 'undefined' && google.maps && google.maps.places) {
                     autocomplete = new google.maps.places.Autocomplete(el, {
-                        componentRestrictions: { country: 'eg' },
-                        language: 'ar',
+                        componentRestrictions: { country: 'eg' }, language: 'ar',
                         fields: ['geometry', 'formatted_address', 'name']
                     });
                     geocoder = new google.maps.Geocoder();
                     autocomplete.addListener('place_changed', function() {
                         const place = autocomplete.getPlace();
                         if (place.geometry) {
-                            const lat = place.geometry.location.lat();
-                            const lng = place.geometry.location.lng();
+                            const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
                             document.getElementById('latitude').value = lat;
                             document.getElementById('longitude').value = lng;
                             document.getElementById('town').value = place.address_components ? getTownFromComponents(place.address_components) : '';
@@ -448,12 +333,8 @@ require_once 'header.php';
                             updateMapLocation(lat, lng);
                         }
                     });
-                } else {
-                    showApiError();
-                }
-            } catch (e) {
-                showApiError();
-            }
+                } else { showApiError(); }
+            } catch (e) { showApiError(); }
         }
 
         function initMap() {
@@ -491,9 +372,7 @@ require_once 'header.php';
         function updateMapLocation(lat, lng) {
             if (map && marker) {
                 const pos = new google.maps.LatLng(lat, lng);
-                marker.setPosition(pos);
-                map.setCenter(pos);
-                map.setZoom(15);
+                marker.setPosition(pos); map.setCenter(pos); map.setZoom(15);
                 document.getElementById('latitude').value = lat;
                 document.getElementById('longitude').value = lng;
             }
@@ -517,7 +396,6 @@ require_once 'header.php';
             }
         }
 
-        // Edit mode
         function startEdit(customer) {
             document.getElementById('formAction').value = 'edit';
             document.getElementById('editId').value = customer.id;
@@ -529,15 +407,10 @@ require_once 'header.php';
             document.getElementById('latitude').value = customer.latitude || '';
             document.getElementById('longitude').value = customer.longitude || '';
             document.getElementById('town').value = customer.town || '';
-
             document.getElementById('formTitle').innerHTML = '<i class="bi bi-pencil"></i> تعديل العميل #' + (customer.customer_number || customer.id);
             document.getElementById('formSubmitBtn').innerHTML = '<i class="bi bi-check-circle"></i> حفظ التعديلات';
             document.getElementById('formCancelBtn').classList.remove('d-none');
-
-            if (customer.latitude && customer.longitude) {
-                updateMapLocation(parseFloat(customer.latitude), parseFloat(customer.longitude));
-            }
-
+            if (customer.latitude && customer.longitude) updateMapLocation(parseFloat(customer.latitude), parseFloat(customer.longitude));
             document.getElementById('customerFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
@@ -551,19 +424,13 @@ require_once 'header.php';
         }
 
         function waitForGoogleMaps() {
-            if (typeof google !== 'undefined' && google.maps && google.maps.places) {
-                initAutocomplete();
-                initMap();
-            } else {
-                setTimeout(waitForGoogleMaps, 100);
-            }
+            if (typeof google !== 'undefined' && google.maps && google.maps.places) { initAutocomplete(); initMap(); }
+            else setTimeout(waitForGoogleMaps, 100);
         }
 
         window.addEventListener('load', function() {
             waitForGoogleMaps();
-            setTimeout(function() {
-                if (typeof google === 'undefined' || !google.maps) showApiError();
-            }, 5000);
+            setTimeout(function() { if (typeof google === 'undefined' || !google.maps) showApiError(); }, 5000);
         });
 
         document.getElementById('coordsSearchBtn')?.addEventListener('click', handleCoordsSearch);
@@ -585,30 +452,173 @@ require_once 'header.php';
                 });
             }
         });
-        (function() {
-            let debounceTimer;
-            const searchInput = document.getElementById('customerSearchInput');
-            const searchForm = document.getElementById('customerSearchForm');
-            if (searchInput && searchForm) {
-                searchInput.addEventListener('input', function() {
-                    clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(function() {
-                        searchForm.submit();
-                    }, 400);
-                });
-            }
-        })();
 
-        document.querySelectorAll('.delete-form').forEach(function(form) {
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-                const name = form.getAttribute('data-name') || '';
-                confirmSubmit(form, {
-                    title: 'حذف عميل',
-                    message: 'هل أنت متأكد من حذف العميل "' + name + '"؟',
-                    btnText: 'نعم، حذف'
+        // Client-side table: search, sort, pagination
+        const allCustData = <?php echo json_encode(array_map(function($c) {
+            return [
+                'id' => $c['id'],
+                'cn' => $c['customer_number'] ?? (string)$c['id'],
+                'name' => $c['name'],
+                'phone' => $c['phone'] ?? '',
+                'address' => $c['address'] ?? '',
+                'latitude' => $c['latitude'] ?? '',
+                'longitude' => $c['longitude'] ?? '',
+                'notes' => $c['notes'] ?? '',
+                'town' => $c['town'] ?? '',
+            ];
+        }, $allCustomers), JSON_UNESCAPED_UNICODE); ?>;
+
+        const PER_PAGE = 50;
+        let currentPage = 1;
+        let searchQuery = '';
+        let sortCol = 'customer_number';
+        let sortDir = 'asc';
+
+        function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+        function extractTrailingNum(addr) {
+            if (!addr) return '';
+            const m = addr.match(/(\d+)\s*$/);
+            return m ? m[1] : '';
+        }
+
+        function getFiltered() {
+            let items = allCustData;
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                items = items.filter(c =>
+                    c.cn.toLowerCase().includes(q) ||
+                    c.name.toLowerCase().includes(q) ||
+                    c.phone.toLowerCase().includes(q) ||
+                    c.address.toLowerCase().includes(q)
+                );
+            }
+            items = [...items].sort((a, b) => {
+                let va, vb;
+                if (sortCol === 'customer_number') {
+                    va = parseInt(a.cn) || 0; vb = parseInt(b.cn) || 0;
+                    if (va !== vb) return sortDir === 'asc' ? va - vb : vb - va;
+                    va = a.cn; vb = b.cn;
+                } else if (sortCol === 'name') {
+                    va = a.name.toLowerCase(); vb = b.name.toLowerCase();
+                } else if (sortCol === 'phone') {
+                    va = a.phone.toLowerCase(); vb = b.phone.toLowerCase();
+                } else {
+                    va = ''; vb = '';
+                }
+                if (va < vb) return sortDir === 'asc' ? -1 : 1;
+                if (va > vb) return sortDir === 'asc' ? 1 : -1;
+                return 0;
+            });
+            return items;
+        }
+
+        function renderCustomerTable() {
+            const filtered = getFiltered();
+            const total = filtered.length;
+            const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+            if (currentPage > totalPages) currentPage = totalPages;
+            const start = (currentPage - 1) * PER_PAGE;
+            const page = filtered.slice(start, start + PER_PAGE);
+
+            const tbody = document.getElementById('customerTableBody');
+            if (page.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">لا يوجد عملاء</td></tr>';
+            } else {
+                tbody.innerHTML = page.map(c => {
+                    const addrNum = extractTrailingNum(c.address);
+                    const hasCoords = c.latitude && c.longitude && !isNaN(c.latitude) && !isNaN(c.longitude);
+                    let qrHtml = '-';
+                    if (hasCoords) {
+                        const mUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(c.latitude + ',' + c.longitude);
+                        const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=' + encodeURIComponent(mUrl);
+                        qrHtml = '<img src="' + qrUrl + '" alt="QR" style="width:40px;height:40px;" loading="lazy">';
+                    }
+                    const custJson = esc(JSON.stringify(c));
+                    return '<tr>' +
+                        '<td>' + esc(c.cn) + '</td>' +
+                        '<td><strong>' + esc(c.name) + '</strong></td>' +
+                        '<td>' + (esc(c.phone) || '-') + '</td>' +
+                        '<td class="text-truncate" style="max-width:200px;" title="' + esc(c.address) + '">' + esc(c.address) + '</td>' +
+                        '<td>' + (addrNum ? esc(addrNum) : '-') + '</td>' +
+                        '<td><small>-</small></td>' +
+                        '<td>' + qrHtml + '</td>' +
+                        '<td><div class="d-flex gap-1">' +
+                            '<button type="button" class="btn btn-sm btn-outline-primary edit-btn" data-cust=\'' + JSON.stringify(c).replace(/'/g, '&#39;') + '\'><i class="bi bi-pencil"></i></button>' +
+                            '<form method="POST" class="d-inline delete-form" data-name="' + esc(c.name) + '">' +
+                                '<input type="hidden" name="action" value="delete">' +
+                                '<input type="hidden" name="id" value="' + c.id + '">' +
+                                '<button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>' +
+                            '</form>' +
+                        '</div></td></tr>';
+                }).join('');
+            }
+
+            // Update sort icons
+            ['customer_number', 'name', 'phone'].forEach(col => {
+                const icon = document.getElementById('sortIcon-' + col);
+                if (icon) icon.textContent = col === sortCol ? (sortDir === 'asc' ? '▲' : '▼') : '';
+            });
+
+            // Page info
+            document.getElementById('customerPageInfo').textContent = 'صفحة ' + currentPage + ' من ' + totalPages + ' (' + total + ')';
+
+            // Pagination
+            const ul = document.getElementById('customerPagination');
+            ul.innerHTML = '';
+            if (totalPages > 1) {
+                const mk = (label, pg, dis, act) => {
+                    const li = document.createElement('li');
+                    li.className = 'page-item' + (dis ? ' disabled' : '') + (act ? ' active' : '');
+                    const a = document.createElement('a');
+                    a.className = 'page-link'; a.href = '#'; a.textContent = label;
+                    a.addEventListener('click', e => { e.preventDefault(); if (!dis && !act) { currentPage = pg; renderCustomerTable(); } });
+                    li.appendChild(a); ul.appendChild(li);
+                };
+                mk('‹', currentPage - 1, currentPage <= 1, false);
+                let s = Math.max(1, currentPage - 2), e = Math.min(totalPages, currentPage + 2);
+                if (s > 1) mk('…', 1, true, false);
+                for (let p = s; p <= e; p++) mk(p, p, false, p === currentPage);
+                if (e < totalPages) mk('…', totalPages, true, false);
+                mk('›', currentPage + 1, currentPage >= totalPages, false);
+            }
+
+            // Bind edit buttons
+            tbody.querySelectorAll('.edit-btn').forEach(btn => {
+                btn.addEventListener('click', () => startEdit(JSON.parse(btn.dataset.cust)));
+            });
+
+            // Bind delete forms
+            tbody.querySelectorAll('.delete-form').forEach(form => {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    const name = form.getAttribute('data-name') || '';
+                    confirmSubmit(form, { title: 'حذف عميل', message: 'هل أنت متأكد من حذف العميل "' + name + '"؟', btnText: 'نعم، حذف' });
                 });
             });
+        }
+
+        // Search input
+        document.getElementById('customerSearchInput').addEventListener('input', function() {
+            searchQuery = this.value;
+            currentPage = 1;
+            renderCustomerTable();
         });
+
+        // Sort headers
+        document.querySelectorAll('.sortable-th').forEach(th => {
+            th.addEventListener('click', function() {
+                const col = this.dataset.col;
+                if (sortCol === col) {
+                    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortCol = col;
+                    sortDir = 'asc';
+                }
+                renderCustomerTable();
+            });
+        });
+
+        renderCustomerTable();
     </script>
 <?php require_once 'footer.php'; ?>
