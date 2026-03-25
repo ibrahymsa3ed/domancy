@@ -57,6 +57,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $messageType = "danger";
                 }
             }
+        } elseif ($_POST['action'] === 'edit') {
+            $id = $_POST['id'] ?? 0;
+            $name = $_POST['name'] ?? '';
+            $phone = $_POST['phone'] ?? '';
+            $car_number = $_POST['car_number'] ?? '';
+            $car_type = $_POST['car_type'] ?? '';
+            $color = $_POST['color'] ?? '#e6194b';
+            $capacity = $_POST['capacity'] ?? 10;
+            $is_active = isset($_POST['is_active']) ? 1 : 0;
+            $governorate = $_POST['governorate'] ?? '';
+
+            if ($id && $name) {
+                try {
+                    $stmt = getDB()->prepare("UPDATE drivers SET name = ?, phone = ?, car_number = ?, car_type = ?, color = ?, governorate = ?, capacity = ?, is_active = ? WHERE id = ?");
+                    $stmt->execute([$name, $phone, $car_number, $car_type, $color, $governorate, $capacity, $is_active, $id]);
+                    $message = "تم تحديث بيانات السائق بنجاح";
+                    $messageType = "success";
+                } catch (PDOException $e) {
+                    $message = "خطأ في تحديث بيانات السائق: " . $e->getMessage();
+                    $messageType = "danger";
+                }
+            } else {
+                $message = "يرجى إدخال اسم السائق";
+                $messageType = "warning";
+            }
         } elseif ($_POST['action'] === 'update_color') {
             $id = $_POST['id'] ?? 0;
             $color = $_POST['color'] ?? '#e6194b';
@@ -214,6 +239,18 @@ require_once 'header.php';
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary edit-driver-btn"
+                                                        data-id="<?php echo $driver['id']; ?>"
+                                                        data-name="<?php echo htmlspecialchars($driver['name']); ?>"
+                                                        data-phone="<?php echo htmlspecialchars($driver['phone'] ?? ''); ?>"
+                                                        data-car_number="<?php echo htmlspecialchars($driver['car_number'] ?? ''); ?>"
+                                                        data-car_type="<?php echo htmlspecialchars($driver['car_type'] ?? ''); ?>"
+                                                        data-color="<?php echo htmlspecialchars($driver['color'] ?? '#e6194b'); ?>"
+                                                        data-capacity="<?php echo (int)$driver['capacity']; ?>"
+                                                        data-governorate="<?php echo htmlspecialchars($driver['governorate'] ?? ''); ?>"
+                                                        data-is_active="<?php echo $driver['is_active'] ? '1' : '0'; ?>">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
                                                     <form method="POST" style="display: inline;">
                                                         <input type="hidden" name="action" value="toggle_active">
                                                         <input type="hidden" name="id" value="<?php echo $driver['id']; ?>">
@@ -241,6 +278,74 @@ require_once 'header.php';
         </div>
     </div>
 
+    <div class="modal fade" id="editDriverModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <form method="POST" id="editDriverForm">
+                    <input type="hidden" name="action" value="edit">
+                    <input type="hidden" name="id" id="editDriverId">
+                    <div class="modal-header">
+                        <h5 class="modal-title">تعديل بيانات السائق</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">اسم السائق *</label>
+                            <input type="text" class="form-control" name="name" id="editDriverName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">الهاتف</label>
+                            <input type="text" class="form-control" name="phone" id="editDriverPhone">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">رقم السيارة</label>
+                            <input type="text" class="form-control" name="car_number" id="editDriverCarNumber">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">نوع السيارة</label>
+                            <input type="text" class="form-control" name="car_type" id="editDriverCarType">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">لون المسار</label>
+                            <div class="d-flex align-items-center gap-2">
+                                <input type="color" class="form-control form-control-color" name="color" id="editDriverColor" list="driverColorOptions">
+                                <select class="form-select form-select-sm" id="editColorPresetSelect">
+                                    <option value="">ألوان جاهزة</option>
+                                    <option value="#e6194b">أحمر</option>
+                                    <option value="#3cb44b">أخضر</option>
+                                    <option value="#ffe119">أصفر</option>
+                                    <option value="#4363d8">أزرق</option>
+                                    <option value="#f58231">برتقالي</option>
+                                    <option value="#911eb4">بنفسجي</option>
+                                    <option value="#46f0f0">سماوي</option>
+                                    <option value="#800000">عنابي</option>
+                                    <option value="#000075">كحلي</option>
+                                    <option value="#808080">رمادي</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">القدرة (عدد الطلبات في اليوم)</label>
+                            <input type="number" class="form-control" name="capacity" id="editDriverCapacity" min="1">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">المحافظة</label>
+                            <input type="text" class="form-control" name="governorate" id="editDriverGovernorate">
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" name="is_active" id="editDriverActive">
+                            <label class="form-check-label" for="editDriverActive">نشط</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle"></i> حفظ التعديلات</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <datalist id="driverColorOptions">
         <option value="#e6194b"></option>
         <option value="#3cb44b"></option>
@@ -256,7 +361,7 @@ require_once 'header.php';
 
     <script>
         const presetSelect = document.getElementById('colorPresetSelect');
-        const colorInput = document.querySelector('input[name="color"]');
+        const colorInput = document.querySelector('form:not(#editDriverForm) input[name="color"]');
         if (presetSelect && colorInput) {
             presetSelect.addEventListener('change', () => {
                 if (presetSelect.value) {
@@ -264,6 +369,31 @@ require_once 'header.php';
                 }
             });
         }
+
+        const editColorPreset = document.getElementById('editColorPresetSelect');
+        const editColorInput = document.getElementById('editDriverColor');
+        if (editColorPreset && editColorInput) {
+            editColorPreset.addEventListener('change', () => {
+                if (editColorPreset.value) {
+                    editColorInput.value = editColorPreset.value;
+                }
+            });
+        }
+
+        document.querySelectorAll('.edit-driver-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.getElementById('editDriverId').value = btn.dataset.id;
+                document.getElementById('editDriverName').value = btn.dataset.name;
+                document.getElementById('editDriverPhone').value = btn.dataset.phone;
+                document.getElementById('editDriverCarNumber').value = btn.dataset.car_number;
+                document.getElementById('editDriverCarType').value = btn.dataset.car_type;
+                document.getElementById('editDriverColor').value = btn.dataset.color;
+                document.getElementById('editDriverCapacity').value = btn.dataset.capacity;
+                document.getElementById('editDriverGovernorate').value = btn.dataset.governorate;
+                document.getElementById('editDriverActive').checked = btn.dataset.is_active === '1';
+                new bootstrap.Modal(document.getElementById('editDriverModal')).show();
+            });
+        });
 
         document.querySelectorAll('.delete-driver-form').forEach(form => {
             form.addEventListener('submit', (event) => {

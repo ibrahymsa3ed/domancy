@@ -512,16 +512,12 @@ table {
     }
 }
 
-/* ── Remove heavy Bootstrap overrides ── */
-.bg-primary { background-color: transparent !important; }
-.bg-success { background-color: transparent !important; }
-.bg-info { background-color: transparent !important; }
-.text-white { color: inherit !important; }
-
+/* ── Remove heavy Bootstrap overrides (scoped to card headers only) ── */
 .card-header.bg-primary,
 .card-header.bg-success,
 .card-header.bg-info {
     background: #fff !important;
+    color: var(--slate-800) !important;
 }
 
 .card-header .text-white {

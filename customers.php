@@ -260,6 +260,12 @@ require_once 'header.php';
                                 <option value="100">100</option>
                             </select>
                         </div>
+                        <div class="d-flex justify-content-between align-items-center p-2 border-bottom" id="topPaginationBar">
+                            <small class="text-muted" id="customerPageInfoTop"></small>
+                            <nav>
+                                <ul class="pagination pagination-sm mb-0" id="customerPaginationTop"></ul>
+                            </nav>
+                        </div>
                         <div class="table-responsive">
                             <table class="table table-hover mb-0">
                                 <thead>
@@ -566,27 +572,31 @@ require_once 'header.php';
             });
 
             // Page info
-            document.getElementById('customerPageInfo').textContent = 'صفحة ' + currentPage + ' من ' + totalPages + ' (' + total + ')';
+            const pageText = 'صفحة ' + currentPage + ' من ' + totalPages + ' (' + total + ')';
+            document.getElementById('customerPageInfo').textContent = pageText;
+            document.getElementById('customerPageInfoTop').textContent = pageText;
 
-            // Pagination
-            const ul = document.getElementById('customerPagination');
-            ul.innerHTML = '';
-            if (totalPages > 1) {
-                const mk = (label, pg, dis, act) => {
-                    const li = document.createElement('li');
-                    li.className = 'page-item' + (dis ? ' disabled' : '') + (act ? ' active' : '');
-                    const a = document.createElement('a');
-                    a.className = 'page-link'; a.href = '#'; a.textContent = label;
-                    a.addEventListener('click', e => { e.preventDefault(); if (!dis && !act) { currentPage = pg; renderCustomerTable(); } });
-                    li.appendChild(a); ul.appendChild(li);
-                };
-                mk('‹', currentPage - 1, currentPage <= 1, false);
-                let s = Math.max(1, currentPage - 2), e = Math.min(totalPages, currentPage + 2);
-                if (s > 1) mk('…', 1, true, false);
-                for (let p = s; p <= e; p++) mk(p, p, false, p === currentPage);
-                if (e < totalPages) mk('…', totalPages, true, false);
-                mk('›', currentPage + 1, currentPage >= totalPages, false);
-            }
+            // Pagination (render to both top and bottom)
+            ['customerPagination', 'customerPaginationTop'].forEach(elId => {
+                const ul = document.getElementById(elId);
+                ul.innerHTML = '';
+                if (totalPages > 1) {
+                    const mk = (label, pg, dis, act) => {
+                        const li = document.createElement('li');
+                        li.className = 'page-item' + (dis ? ' disabled' : '') + (act ? ' active' : '');
+                        const a = document.createElement('a');
+                        a.className = 'page-link'; a.href = '#'; a.textContent = label;
+                        a.addEventListener('click', e => { e.preventDefault(); if (!dis && !act) { currentPage = pg; renderCustomerTable(); } });
+                        li.appendChild(a); ul.appendChild(li);
+                    };
+                    mk('‹', currentPage - 1, currentPage <= 1, false);
+                    let s = Math.max(1, currentPage - 2), e = Math.min(totalPages, currentPage + 2);
+                    if (s > 1) mk('…', 1, true, false);
+                    for (let p = s; p <= e; p++) mk(p, p, false, p === currentPage);
+                    if (e < totalPages) mk('…', totalPages, true, false);
+                    mk('›', currentPage + 1, currentPage >= totalPages, false);
+                }
+            });
 
             // Bind edit buttons
             tbody.querySelectorAll('.edit-btn').forEach(btn => {
