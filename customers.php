@@ -249,11 +249,16 @@ require_once 'header.php';
                         </form>
                     </div>
                     <div class="card-body p-0">
-                        <div class="p-2">
-                            <div class="input-group">
+                        <div class="p-2 d-flex gap-2 align-items-center">
+                            <div class="input-group flex-grow-1">
                                 <span class="input-group-text"><i class="bi bi-search"></i></span>
                                 <input type="text" class="form-control" id="customerSearchInput" placeholder="بحث برقم العميل أو الاسم أو الهاتف أو العنوان...">
                             </div>
+                            <select class="form-select form-select-sm" id="perPageSelect" style="width: auto;">
+                                <option value="20" selected>20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
                         </div>
                         <div class="table-responsive">
                             <table class="table table-hover mb-0">
@@ -468,7 +473,7 @@ require_once 'header.php';
             ];
         }, $allCustomers), JSON_UNESCAPED_UNICODE); ?>;
 
-        const PER_PAGE = 50;
+        let perPage = 20;
         let currentPage = 1;
         let searchQuery = '';
         let sortCol = 'customer_number';
@@ -516,10 +521,10 @@ require_once 'header.php';
         function renderCustomerTable() {
             const filtered = getFiltered();
             const total = filtered.length;
-            const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+            const totalPages = Math.max(1, Math.ceil(total / perPage));
             if (currentPage > totalPages) currentPage = totalPages;
-            const start = (currentPage - 1) * PER_PAGE;
-            const page = filtered.slice(start, start + PER_PAGE);
+            const start = (currentPage - 1) * perPage;
+            const page = filtered.slice(start, start + perPage);
 
             const tbody = document.getElementById('customerTableBody');
             if (page.length === 0) {
@@ -617,6 +622,13 @@ require_once 'header.php';
                 }
                 renderCustomerTable();
             });
+        });
+
+        // Per-page selector
+        document.getElementById('perPageSelect').addEventListener('change', function() {
+            perPage = parseInt(this.value);
+            currentPage = 1;
+            renderCustomerTable();
         });
 
         renderCustomerTable();
