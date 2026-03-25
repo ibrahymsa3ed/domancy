@@ -60,6 +60,7 @@ function encodePlusCode($latitude, $longitude) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] === 'add') {
+            $customer_number = trim($_POST['customer_number'] ?? '');
             $name = $_POST['name'] ?? '';
             $phone = $_POST['phone'] ?? '';
             $address = $_POST['address'] ?? '';
@@ -69,14 +70,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $town = $_POST['town'] ?? '';
 
             if ($name && $address && $latitude && $longitude) {
-                try {
-                    $stmt = getDB()->prepare("INSERT INTO customers (name, phone, address, town, latitude, longitude, notes) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$name, $phone, $address, $town, $latitude, $longitude, $notes]);
-                    $message = "تم إضافة العميل بنجاح";
-                    $messageType = "success";
-                } catch (PDOException $e) {
-                    $message = "خطأ في إضافة العميل: " . $e->getMessage();
+                if ($customer_number === '') {
+                    $maxNum = getDB()->query("SELECT MAX(CAST(customer_number AS UNSIGNED)) FROM customers")->fetchColumn();
+                    $customer_number = (string)(((int)$maxNum) + 1);
+                }
+                $dup = getDB()->prepare("SELECT id FROM customers WHERE customer_number = ?");
+                $dup->execute([$customer_number]);
+                if ($dup->fetch()) {
+                    $message = "رقم العميل '$customer_number' مستخدم بالفعل";
                     $messageType = "danger";
+                } else {
+                    try {
+                        $stmt = getDB()->prepare("INSERT INTO customers (customer_number, name, phone, address, town, latitude, longitude, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$customer_number, $name, $phone, $address, $town, $latitude, $longitude, $notes]);
+                        $message = "تم إضافة العميل بنجاح";
+                        $messageType = "success";
+                    } catch (PDOException $e) {
+                        $message = "خطأ في إضافة العميل: " . $e->getMessage();
+                        $messageType = "danger";
+                    }
                 }
             } else {
                 $message = "يرجى ملء جميع الحقول المطلوبة";
@@ -84,6 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($_POST['action'] === 'edit') {
             $id = $_POST['id'] ?? 0;
+            $customer_number = trim($_POST['customer_number'] ?? '');
             $name = $_POST['name'] ?? '';
             $phone = $_POST['phone'] ?? '';
             $address = $_POST['address'] ?? '';
@@ -92,15 +105,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notes = $_POST['notes'] ?? '';
             $town = $_POST['town'] ?? '';
 
-            if ($id && $name && $address) {
-                try {
-                    $stmt = getDB()->prepare("UPDATE customers SET name = ?, phone = ?, address = ?, town = ?, latitude = ?, longitude = ?, notes = ? WHERE id = ?");
-                    $stmt->execute([$name, $phone, $address, $town, $latitude ?: null, $longitude ?: null, $notes, $id]);
-                    $message = "تم تحديث بيانات العميل بنجاح";
-                    $messageType = "success";
-                } catch (PDOException $e) {
-                    $message = "خطأ في تحديث العميل: " . $e->getMessage();
+            if ($id && $name && $address && $customer_number !== '') {
+                $dup = getDB()->prepare("SELECT id FROM customers WHERE customer_number = ? AND id != ?");
+                $dup->execute([$customer_number, $id]);
+                if ($dup->fetch()) {
+                    $message = "رقم العميل '$customer_number' مستخدم بالفعل لعميل آخر";
                     $messageType = "danger";
+                } else {
+                    try {
+                        $stmt = getDB()->prepare("UPDATE customers SET customer_number = ?, name = ?, phone = ?, address = ?, town = ?, latitude = ?, longitude = ?, notes = ? WHERE id = ?");
+                        $stmt->execute([$customer_number, $name, $phone, $address, $town, $latitude ?: null, $longitude ?: null, $notes, $id]);
+                        $message = "تم تحديث بيانات العميل بنجاح";
+                        $messageType = "success";
+                    } catch (PDOException $e) {
+                        $message = "خطأ في تحديث العميل: " . $e->getMessage();
+                        $messageType = "danger";
+                    }
                 }
             } else {
                 $message = "يرجى ملء جميع الحقول المطلوبة";
@@ -125,15 +145,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $baseLat = $factory ? (float) $factory['latitude'] : 30.0444;
                 $baseLng = $factory ? (float) $factory['longitude'] : 31.2357;
                 $town = 'القاهرة';
-                $stmt = getDB()->prepare("INSERT INTO customers (name, phone, address, town, latitude, longitude, notes) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                $maxNum = (int) getDB()->query("SELECT COALESCE(MAX(CAST(customer_number AS UNSIGNED)), 0) FROM customers")->fetchColumn();
+                $stmt = getDB()->prepare("INSERT INTO customers (customer_number, name, phone, address, town, latitude, longitude, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                 for ($i = 1; $i <= 10; $i++) {
+                    $maxNum++;
                     $name = 'عميل عشوائي ' . $i;
                     $phone = '01' . random_int(100000000, 999999999);
                     $addrNum = random_int(1000000, 9999999);
                     $address = 'عنوان تجريبي ' . $i . ' محافظة القاهرة ' . $addrNum;
                     $lat = $baseLat + (random_int(-120, 120) / 1000);
                     $lng = $baseLng + (random_int(-120, 120) / 1000);
-                    $stmt->execute([$name, $phone, $address, $town, $lat, $lng, '']);
+                    $stmt->execute([(string)$maxNum, $name, $phone, $address, $town, $lat, $lng, '']);
                 }
                 $message = "تم إضافة 10 عملاء تجريبيين";
                 $messageType = "success";
@@ -151,10 +173,10 @@ $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = 50;
 $offset = ($page - 1) * $perPage;
 
-$sortCol = $_GET['sort'] ?? 'id';
+$sortCol = $_GET['sort'] ?? 'customer_number';
 $sortDir = strtolower($_GET['dir'] ?? 'asc');
-$allowedSorts = ['id', 'name', 'phone', 'address'];
-if (!in_array($sortCol, $allowedSorts)) $sortCol = 'id';
+$allowedSorts = ['customer_number', 'name', 'phone', 'address'];
+if (!in_array($sortCol, $allowedSorts)) $sortCol = 'customer_number';
 if (!in_array($sortDir, ['asc', 'desc'])) $sortDir = 'asc';
 
 $countSql = "SELECT COUNT(*) FROM customers";
@@ -163,19 +185,14 @@ $params = [];
 
 if ($search !== '') {
     $like = '%' . $search . '%';
-    $idExact = is_numeric($search) ? (int) $search : null;
-    if ($idExact !== null) {
-        $where = " WHERE (id = ? OR name LIKE ? OR address LIKE ? OR phone LIKE ?)";
-        $params = [$idExact, $like, $like, $like];
-    } else {
-        $where = " WHERE (name LIKE ? OR address LIKE ? OR phone LIKE ?)";
-        $params = [$like, $like, $like];
-    }
+    $where = " WHERE (customer_number LIKE ? OR name LIKE ? OR address LIKE ? OR phone LIKE ?)";
+    $params = [$like, $like, $like, $like];
     $countSql .= $where;
     $dataSql .= $where;
 }
 
-$dataSql .= " ORDER BY $sortCol $sortDir LIMIT $perPage OFFSET $offset";
+$orderExpr = $sortCol === 'customer_number' ? "CAST(customer_number AS UNSIGNED) $sortDir, customer_number $sortDir" : "$sortCol $sortDir";
+$dataSql .= " ORDER BY $orderExpr LIMIT $perPage OFFSET $offset";
 
 $countStmt = getDB()->prepare($countSql);
 $countStmt->execute($params);
@@ -209,6 +226,10 @@ require_once 'header.php';
                         <form method="POST" id="customerForm">
                             <input type="hidden" name="action" value="add" id="formAction">
                             <input type="hidden" name="id" id="editId">
+                            <div class="mb-2">
+                                <label class="form-label">رقم العميل</label>
+                                <input type="text" class="form-control" name="customer_number" id="formCustomerNumber" placeholder="تلقائي">
+                            </div>
                             <div class="mb-2">
                                 <label class="form-label">اسم العميل *</label>
                                 <input type="text" class="form-control" name="name" id="formName" required>
@@ -287,7 +308,7 @@ require_once 'header.php';
                             <table class="table table-hover mb-0">
                                 <thead>
                                     <tr>
-                                        <th><a href="<?php echo sortUrl('id', $sortCol, $sortDir, $sortParams); ?>" class="text-decoration-none">#<?php echo sortIcon('id', $sortCol, $sortDir); ?></a></th>
+                                        <th><a href="<?php echo sortUrl('customer_number', $sortCol, $sortDir, $sortParams); ?>" class="text-decoration-none">رقم<?php echo sortIcon('customer_number', $sortCol, $sortDir); ?></a></th>
                                         <th><a href="<?php echo sortUrl('name', $sortCol, $sortDir, $sortParams); ?>" class="text-decoration-none">الاسم<?php echo sortIcon('name', $sortCol, $sortDir); ?></a></th>
                                         <th><a href="<?php echo sortUrl('phone', $sortCol, $sortDir, $sortParams); ?>" class="text-decoration-none">الهاتف<?php echo sortIcon('phone', $sortCol, $sortDir); ?></a></th>
                                         <th>العنوان</th>
@@ -307,7 +328,7 @@ require_once 'header.php';
                                             $plusCode = encodePlusCode($customer['latitude'], $customer['longitude']);
                                         ?>
                                         <tr>
-                                            <td><?php echo $customer['id']; ?></td>
+                                            <td><?php echo htmlspecialchars($customer['customer_number']); ?></td>
                                             <td><strong><?php echo htmlspecialchars($customer['name']); ?></strong></td>
                                             <td><?php echo htmlspecialchars($customer['phone'] ?? '-'); ?></td>
                                             <td class="text-truncate" style="max-width: 200px;" title="<?php echo htmlspecialchars($customer['address']); ?>"><?php echo htmlspecialchars($customer['address']); ?></td>
@@ -500,6 +521,7 @@ require_once 'header.php';
         function startEdit(customer) {
             document.getElementById('formAction').value = 'edit';
             document.getElementById('editId').value = customer.id;
+            document.getElementById('formCustomerNumber').value = customer.customer_number || '';
             document.getElementById('formName').value = customer.name || '';
             document.getElementById('formPhone').value = customer.phone || '';
             document.getElementById('addressInput').value = customer.address || '';
@@ -508,7 +530,7 @@ require_once 'header.php';
             document.getElementById('longitude').value = customer.longitude || '';
             document.getElementById('town').value = customer.town || '';
 
-            document.getElementById('formTitle').innerHTML = '<i class="bi bi-pencil"></i> تعديل العميل #' + customer.id;
+            document.getElementById('formTitle').innerHTML = '<i class="bi bi-pencil"></i> تعديل العميل #' + (customer.customer_number || customer.id);
             document.getElementById('formSubmitBtn').innerHTML = '<i class="bi bi-check-circle"></i> حفظ التعديلات';
             document.getElementById('formCancelBtn').classList.remove('d-none');
 

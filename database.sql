@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS factory (
 -- Customers table
 CREATE TABLE IF NOT EXISTS customers (
     id INT PRIMARY KEY AUTO_INCREMENT,
+    customer_number VARCHAR(30) NOT NULL,
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(20),
     address TEXT NOT NULL,
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS customers (
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_customer_number (customer_number),
     INDEX idx_location (latitude, longitude)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

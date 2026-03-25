@@ -55,3 +55,19 @@ class Database {
 function getDB() {
     return Database::getInstance()->getConnection();
 }
+
+// Auto-migration: add customer_number column if missing
+(function () {
+    try {
+        $db = getDB();
+        $cols = $db->query("SHOW COLUMNS FROM customers LIKE 'customer_number'")->fetchAll();
+        if (empty($cols)) {
+            $db->exec("ALTER TABLE customers ADD COLUMN customer_number VARCHAR(30) NULL AFTER id");
+            $db->exec("UPDATE customers SET customer_number = CAST(id AS CHAR) WHERE customer_number IS NULL");
+            $db->exec("ALTER TABLE customers MODIFY COLUMN customer_number VARCHAR(30) NOT NULL");
+            $db->exec("ALTER TABLE customers ADD UNIQUE KEY uk_customer_number (customer_number)");
+        }
+    } catch (Throwable $e) {
+        error_log("Migration error: " . $e->getMessage());
+    }
+})();

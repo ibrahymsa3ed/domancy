@@ -636,7 +636,7 @@ $customers = getDB()->query("SELECT * FROM customers ORDER BY name")->fetchAll()
 
 // Get today's orders
 $orders = getDB()->prepare("
-    SELECT o.*, c.name as customer_name, c.address, c.latitude, c.longitude, c.phone,
+    SELECT o.*, c.name as customer_name, c.customer_number, c.address, c.latitude, c.longitude, c.phone,
            d.name as driver_name, d.capacity, d.color as driver_color
     FROM daily_orders o
     LEFT JOIN customers c ON o.customer_id = c.id
@@ -817,7 +817,7 @@ require_once 'header.php';
                                             <li class="list-group-item">
                                                 <div class="d-flex justify-content-between align-items-start">
                                                     <div>
-                                                        <strong><span class="text-muted">#<?php echo $order['customer_id']; ?></span> <?php echo htmlspecialchars($order['customer_name']); ?></strong><br>
+                                                        <strong><span class="text-muted">#<?php echo htmlspecialchars($order['customer_number'] ?? $order['customer_id']); ?></span> <?php echo htmlspecialchars($order['customer_name']); ?></strong><br>
                                                         <small class="text-muted">
                                                             <?php echo htmlspecialchars($order['address']); ?>
                                                         </small>
