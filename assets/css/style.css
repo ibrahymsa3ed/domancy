@@ -223,6 +223,12 @@ table {
     transition: border-color var(--transition), box-shadow var(--transition);
 }
 
+.form-select {
+    background-position: left 0.75rem center;
+    padding-left: 2.25rem;
+    padding-right: 0.75rem;
+}
+
 .form-control:focus,
 .form-select:focus {
     border-color: var(--rose-300);
