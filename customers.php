@@ -283,10 +283,10 @@ require_once 'header.php';
                     </div>
                     <div class="card-body p-0">
                         <div class="p-2">
-                            <form method="GET" class="d-flex gap-2">
+                            <form method="GET" class="d-flex gap-2" id="customerSearchForm">
                                 <input type="hidden" name="sort" value="<?php echo $sortCol; ?>">
                                 <input type="hidden" name="dir" value="<?php echo $sortDir; ?>">
-                                <input type="text" class="form-control" name="q" value="<?php echo htmlspecialchars($search); ?>" placeholder="بحث برقم العميل أو الاسم أو الهاتف أو العنوان...">
+                                <input type="text" class="form-control" name="q" id="customerSearchInput" value="<?php echo htmlspecialchars($search); ?>" placeholder="بحث برقم العميل أو الاسم أو الهاتف أو العنوان...">
                                 <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i></button>
                                 <?php if ($search !== ''): ?>
                                     <a href="customers.php?sort=<?php echo $sortCol; ?>&dir=<?php echo $sortDir; ?>" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i></a>
@@ -585,6 +585,20 @@ require_once 'header.php';
                 });
             }
         });
+        (function() {
+            let debounceTimer;
+            const searchInput = document.getElementById('customerSearchInput');
+            const searchForm = document.getElementById('customerSearchForm');
+            if (searchInput && searchForm) {
+                searchInput.addEventListener('input', function() {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(function() {
+                        searchForm.submit();
+                    }, 400);
+                });
+            }
+        })();
+
         document.querySelectorAll('.delete-form').forEach(function(form) {
             form.addEventListener('submit', function(e) {
                 e.preventDefault();

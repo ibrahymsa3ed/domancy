@@ -144,7 +144,7 @@ require_once 'header.php';
         </div>
     <?php endif; ?>
 
-    <div class="card no-print mb-3">
+    <div class="card no-print mb-3" style="overflow: visible;">
         <div class="card-header">
             <ul class="nav nav-tabs card-header-tabs" role="tablist">
                 <li class="nav-item">
@@ -376,7 +376,6 @@ require_once 'header.php';
 </div>
 
 <style>
-    .card-body:has(.picker-dropdown) { overflow: visible; }
     .picker-dropdown {
         display: none; position: absolute; z-index: 1050; top: 100%; left: 0; right: 0;
         max-height: 250px; overflow-y: auto; background: #fff; border: 1px solid #dee2e6;
