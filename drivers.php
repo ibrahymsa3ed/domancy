@@ -254,25 +254,6 @@ require_once 'header.php';
         <option value="#808080"></option>
     </datalist>
 
-    <div class="modal fade" id="deleteDriverModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">تأكيد حذف السائق</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
-                </div>
-                <div class="modal-body">
-                    هل أنت متأكد من حذف هذا السائق؟
-                    <div class="text-muted small mt-1" id="deleteDriverName"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="button" class="btn btn-danger" id="confirmDeleteDriverBtn">حذف</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script>
         const presetSelect = document.getElementById('colorPresetSelect');
         const colorInput = document.querySelector('input[name="color"]');
@@ -284,34 +265,17 @@ require_once 'header.php';
             });
         }
 
-        const deleteModalEl = document.getElementById('deleteDriverModal');
-        const deleteNameEl = document.getElementById('deleteDriverName');
-        const confirmDeleteBtn = document.getElementById('confirmDeleteDriverBtn');
-        let pendingDeleteForm = null;
-
         document.querySelectorAll('.delete-driver-form').forEach(form => {
             form.addEventListener('submit', (event) => {
                 event.preventDefault();
-                pendingDeleteForm = form;
-                if (deleteNameEl) {
-                    deleteNameEl.textContent = form.getAttribute('data-driver-name') || '';
-                }
-                if (deleteModalEl && typeof bootstrap !== 'undefined') {
-                    const modal = bootstrap.Modal.getOrCreateInstance(deleteModalEl);
-                    modal.show();
-                } else if (window.confirm('هل أنت متأكد من حذف هذا السائق؟')) {
-                    form.submit();
-                }
+                const name = form.getAttribute('data-driver-name') || '';
+                confirmSubmit(form, {
+                    title: 'حذف سائق',
+                    message: 'هل أنت متأكد من حذف السائق "' + name + '"؟',
+                    btnText: 'نعم، حذف'
+                });
             });
         });
-
-        if (confirmDeleteBtn) {
-            confirmDeleteBtn.addEventListener('click', () => {
-                if (pendingDeleteForm) {
-                    pendingDeleteForm.submit();
-                }
-            });
-        }
     </script>
 
 <?php require_once 'footer.php'; ?>

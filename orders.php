@@ -699,7 +699,7 @@ require_once 'header.php';
                                     <select class="form-select" id="customerSelect" name="customer_ids[]" multiple>
                                         <?php foreach ($customers as $customer): ?>
                                             <option value="<?php echo $customer['id']; ?>" <?php echo in_array($customer['id'], $orderedCustomerIds) ? 'selected' : ''; ?>>
-                                                    <?php echo htmlspecialchars($customer['name']); ?> - <?php echo htmlspecialchars($customer['address']); ?>
+                                                    #<?php echo $customer['id']; ?> - <?php echo htmlspecialchars($customer['name']); ?> - <?php echo htmlspecialchars($customer['address']); ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
@@ -802,7 +802,7 @@ require_once 'header.php';
                                     </h6>
                                     <div class="d-flex justify-content-end mb-2">
                                         <?php if ($driverId !== 'unassigned'): ?>
-                                            <form method="POST" class="d-inline">
+                                            <form method="POST" class="d-inline bulk-remove-driver-form">
                                                 <input type="hidden" name="action" value="bulk_remove_driver_orders">
                                                 <input type="hidden" name="order_date" value="<?php echo $selected_date; ?>">
                                                 <input type="hidden" name="driver_id" value="<?php echo $driverId; ?>">
@@ -817,7 +817,7 @@ require_once 'header.php';
                                             <li class="list-group-item">
                                                 <div class="d-flex justify-content-between align-items-start">
                                                     <div>
-                                                        <strong><?php echo htmlspecialchars($order['customer_name']); ?></strong><br>
+                                                        <strong><span class="text-muted">#<?php echo $order['customer_id']; ?></span> <?php echo htmlspecialchars($order['customer_name']); ?></strong><br>
                                                         <small class="text-muted">
                                                             <?php echo htmlspecialchars($order['address']); ?>
                                                         </small>
@@ -846,7 +846,7 @@ require_once 'header.php';
                                                                 </button>
                                                             </form>
                                                         <?php endif; ?>
-                                                        <form method="POST" class="d-inline">
+                                                        <form method="POST" class="d-inline remove-order-form" data-customer-name="<?php echo htmlspecialchars($order['customer_name']); ?>">
                                                             <input type="hidden" name="action" value="remove_order">
                                                             <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                                                             <button type="submit" class="btn btn-sm btn-danger">
@@ -872,7 +872,7 @@ require_once 'header.php';
                                         <form method="POST" class="d-inline" id="bulkUnassignAllForm">
                                             <input type="hidden" name="action" value="bulk_unassign_all">
                                             <input type="hidden" name="order_date" value="<?php echo $selected_date; ?>">
-                                            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#bulkUnassignAllModal">
+                                            <button type="submit" class="btn btn-warning">
                                                 <i class="bi bi-x-circle"></i> إلغاء تعيين الكل (الطلبات تبقى)
                                             </button>
                                         </form>
@@ -880,7 +880,7 @@ require_once 'header.php';
                                     <form method="POST" class="d-inline" id="bulkRemoveAllForm">
                                         <input type="hidden" name="action" value="bulk_remove_all_orders">
                                         <input type="hidden" name="order_date" value="<?php echo $selected_date; ?>">
-                                        <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#bulkRemoveAllModal">
+                                        <button type="submit" class="btn btn-danger">
                                             <i class="bi bi-trash"></i> حذف جميع الطلبات لهذا اليوم
                                         </button>
                                     </form>
@@ -966,64 +966,6 @@ require_once 'header.php';
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-    <div class="modal fade" id="unassignOrderModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">إلغاء تعيين السائق</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
-                </div>
-                <div class="modal-body">
-                    هل تريد إلغاء تعيين السائق لهذا الطلب؟
-                    <div class="text-muted small mt-1" id="unassignOrderCustomerName"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="button" class="btn btn-warning" id="confirmUnassignOrderBtn">إلغاء التعيين</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="bulkUnassignAllModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">إلغاء تعيين الكل</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
-                </div>
-                <div class="modal-body">
-                    هل تريد إلغاء تعيين جميع السائقين؟ الطلبات ستبقى ولكن ستكون غير معينة.
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="button" class="btn btn-warning" id="confirmBulkUnassignAllBtn">
-                        <i class="bi bi-x-circle"></i> إلغاء التعيين
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="bulkRemoveAllModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">حذف جميع الطلبات</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
-                </div>
-                <div class="modal-body">
-                    هل تريد حذف جميع الطلبات لهذا اليوم؟ لا يمكن التراجع عن هذا الإجراء.
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="button" class="btn btn-danger" id="confirmBulkRemoveAllBtn">
-                        <i class="bi bi-trash"></i> حذف الكل
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <script>
         // Enable searchable multi-select for customers
@@ -1328,48 +1270,64 @@ require_once 'header.php';
         google.maps.event.addDomListener(window, 'load', initRouteMap);
 
         (function() {
-            const modalEl = document.getElementById('unassignOrderModal');
-            const nameEl = document.getElementById('unassignOrderCustomerName');
-            const confirmBtn = document.getElementById('confirmUnassignOrderBtn');
-            let pendingForm = null;
-
             document.querySelectorAll('.unassign-order-form').forEach(form => {
-                form.addEventListener('submit', function (e) {
+                form.addEventListener('submit', function(e) {
                     e.preventDefault();
-                    pendingForm = form;
-                    if (nameEl) {
-                        nameEl.textContent = form.getAttribute('data-customer-name') || '';
-                    }
-                    if (modalEl && typeof bootstrap !== 'undefined') {
-                        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-                        modal.show();
-                    } else if (window.confirm('هل تريد إلغاء تعيين السائق لهذا الطلب؟')) {
-                        form.submit();
-                    }
+                    const name = form.getAttribute('data-customer-name') || '';
+                    confirmSubmit(form, {
+                        title: 'إلغاء تعيين',
+                        message: 'هل أنت متأكد من إلغاء تعيين السائق للطلب "' + name + '"؟',
+                        btnClass: 'btn-warning',
+                        btnText: 'نعم'
+                    });
                 });
             });
 
-            if (confirmBtn) {
-                confirmBtn.addEventListener('click', function () {
-                    if (pendingForm) {
-                        pendingForm.submit();
-                    }
+            document.querySelectorAll('.remove-order-form').forEach(form => {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    const name = form.getAttribute('data-customer-name') || '';
+                    confirmSubmit(form, {
+                        title: 'حذف طلب',
+                        message: 'هل أنت متأكد من حذف طلب "' + name + '"؟',
+                        btnText: 'نعم، حذف'
+                    });
                 });
-            }
+            });
+
+            document.querySelectorAll('.bulk-remove-driver-form').forEach(form => {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    confirmSubmit(form, {
+                        title: 'حذف طلبات السائق',
+                        message: 'هل أنت متأكد من حذف كل طلبات هذا السائق؟',
+                        btnText: 'نعم، حذف'
+                    });
+                });
+            });
 
             const bulkRemoveAllForm = document.getElementById('bulkRemoveAllForm');
-            const confirmBulkRemoveAllBtn = document.getElementById('confirmBulkRemoveAllBtn');
-            if (bulkRemoveAllForm && confirmBulkRemoveAllBtn) {
-                confirmBulkRemoveAllBtn.addEventListener('click', function () {
-                    bulkRemoveAllForm.submit();
+            if (bulkRemoveAllForm) {
+                bulkRemoveAllForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    confirmSubmit(bulkRemoveAllForm, {
+                        title: 'حذف جميع الطلبات',
+                        message: 'هل أنت متأكد من حذف جميع الطلبات لهذا اليوم؟ لا يمكن التراجع.',
+                        btnText: 'نعم، حذف الكل'
+                    });
                 });
             }
 
             const bulkUnassignAllForm = document.getElementById('bulkUnassignAllForm');
-            const confirmBulkUnassignAllBtn = document.getElementById('confirmBulkUnassignAllBtn');
-            if (bulkUnassignAllForm && confirmBulkUnassignAllBtn) {
-                confirmBulkUnassignAllBtn.addEventListener('click', function () {
-                    bulkUnassignAllForm.submit();
+            if (bulkUnassignAllForm) {
+                bulkUnassignAllForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    confirmSubmit(bulkUnassignAllForm, {
+                        title: 'إلغاء تعيين الكل',
+                        message: 'هل أنت متأكد من إلغاء تعيين جميع السائقين؟ الطلبات ستبقى.',
+                        btnClass: 'btn-warning',
+                        btnText: 'نعم، إلغاء التعيين'
+                    });
                 });
             }
         })();
