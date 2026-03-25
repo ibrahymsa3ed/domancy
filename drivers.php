@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $name = $_POST['name'] ?? '';
             $phone = $_POST['phone'] ?? '';
             $car_number = $_POST['car_number'] ?? '';
+            $car_type = $_POST['car_type'] ?? '';
             $color = $_POST['color'] ?? '#e6194b';
             $capacity = $_POST['capacity'] ?? 10;
             $is_active = isset($_POST['is_active']) ? 1 : 0;
@@ -18,8 +19,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($name) {
                 try {
-                    $stmt = getDB()->prepare("INSERT INTO drivers (name, phone, car_number, color, governorate, capacity, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                    $stmt->execute([$name, $phone, $car_number, $color, $governorate, $capacity, $is_active]);
+                    $stmt = getDB()->prepare("INSERT INTO drivers (name, phone, car_number, car_type, color, governorate, capacity, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmt->execute([$name, $phone, $car_number, $car_type, $color, $governorate, $capacity, $is_active]);
                     $message = "تم إضافة السائق بنجاح";
                     $messageType = "success";
                 } catch (PDOException $e) {
@@ -112,6 +113,10 @@ require_once 'header.php';
                                 <input type="text" class="form-control" name="car_number">
                             </div>
                             <div class="mb-3">
+                                <label class="form-label">نوع السيارة</label>
+                                <input type="text" class="form-control" name="car_type">
+                            </div>
+                            <div class="mb-3">
                                 <label class="form-label">لون المسار</label>
                                 <div class="d-flex align-items-center gap-2">
                                     <input type="color" class="form-control form-control-color" name="color" value="#e6194b" list="driverColorOptions">
@@ -164,6 +169,7 @@ require_once 'header.php';
                                         <th>الاسم</th>
                                         <th>الهاتف</th>
                                         <th>رقم السيارة</th>
+                                        <th>نوع السيارة</th>
                                         <th>القدرة</th>
                                         <th>المحافظة</th>
                                         <th>اللون</th>
@@ -182,6 +188,7 @@ require_once 'header.php';
                                                 <td><strong><?php echo htmlspecialchars($driver['name']); ?></strong></td>
                                                 <td><?php echo htmlspecialchars($driver['phone'] ?? '-'); ?></td>
                                                 <td><?php echo htmlspecialchars($driver['car_number'] ?? '-'); ?></td>
+                                                <td><?php echo htmlspecialchars($driver['car_type'] ?? '-'); ?></td>
                                                 <td><?php echo $driver['capacity']; ?> طلبات في اليوم</td>
                                                 <td><?php echo !empty($driver['governorate']) ? htmlspecialchars($driver['governorate']) : '-'; ?></td>
                                                 <td>
@@ -214,7 +221,7 @@ require_once 'header.php';
                                                             <i class="bi bi-<?php echo $driver['is_active'] ? 'pause' : 'play'; ?>"></i>
                                                         </button>
                                                     </form>
-                                                    <form method="POST" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من حذف هذا السائق؟');">
+                                                    <form method="POST" style="display: inline;" class="delete-driver-form" data-driver-name="<?php echo htmlspecialchars($driver['name']); ?>">
                                                         <input type="hidden" name="action" value="delete">
                                                         <input type="hidden" name="id" value="<?php echo $driver['id']; ?>">
                                                         <button type="submit" class="btn btn-sm btn-danger">
@@ -247,6 +254,25 @@ require_once 'header.php';
         <option value="#808080"></option>
     </datalist>
 
+    <div class="modal fade" id="deleteDriverModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">تأكيد حذف السائق</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+                <div class="modal-body">
+                    هل أنت متأكد من حذف هذا السائق؟
+                    <div class="text-muted small mt-1" id="deleteDriverName"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteDriverBtn">حذف</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const presetSelect = document.getElementById('colorPresetSelect');
         const colorInput = document.querySelector('input[name="color"]');
@@ -254,6 +280,35 @@ require_once 'header.php';
             presetSelect.addEventListener('change', () => {
                 if (presetSelect.value) {
                     colorInput.value = presetSelect.value;
+                }
+            });
+        }
+
+        const deleteModalEl = document.getElementById('deleteDriverModal');
+        const deleteNameEl = document.getElementById('deleteDriverName');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteDriverBtn');
+        let pendingDeleteForm = null;
+
+        document.querySelectorAll('.delete-driver-form').forEach(form => {
+            form.addEventListener('submit', (event) => {
+                event.preventDefault();
+                pendingDeleteForm = form;
+                if (deleteNameEl) {
+                    deleteNameEl.textContent = form.getAttribute('data-driver-name') || '';
+                }
+                if (deleteModalEl && typeof bootstrap !== 'undefined') {
+                    const modal = bootstrap.Modal.getOrCreateInstance(deleteModalEl);
+                    modal.show();
+                } else if (window.confirm('هل أنت متأكد من حذف هذا السائق؟')) {
+                    form.submit();
+                }
+            });
+        });
+
+        if (confirmDeleteBtn) {
+            confirmDeleteBtn.addEventListener('click', () => {
+                if (pendingDeleteForm) {
+                    pendingDeleteForm.submit();
                 }
             });
         }

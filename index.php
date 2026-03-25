@@ -295,6 +295,33 @@ require_once 'header.php';
             });
         });
 
+        function buildOneWayRouteRequest(driverOrders) {
+            const all = driverOrders.map(o => ({
+                location: { lat: parseFloat(o.latitude), lng: parseFloat(o.longitude) },
+                order: o
+            }));
+            if (all.length === 0) return null;
+            let farthest = all[0];
+            let maxDistSq = 0;
+            all.forEach(p => {
+                const dlat = p.location.lat - factoryLocation.lat;
+                const dlng = p.location.lng - factoryLocation.lng;
+                const d = dlat * dlat + dlng * dlng;
+                if (d > maxDistSq) { maxDistSq = d; farthest = p; }
+            });
+            const waypoints = all.filter(p => p !== farthest).map(p => ({
+                location: p.location,
+                stopover: true
+            }));
+            return {
+                origin: factoryLocation,
+                destination: farthest.location,
+                waypoints: waypoints,
+                optimizeWaypoints: true,
+                travelMode: google.maps.TravelMode.DRIVING
+            };
+        }
+
         const dailyRouteRenderers = {};
         function renderDailyRoutes() {
             const directionsService = new google.maps.DirectionsService();
@@ -302,10 +329,8 @@ require_once 'header.php';
                 const driverOrders = todayOrdersByDriver[driverId];
                 if (!driverOrders || driverOrders.length === 0) return;
 
-                const waypoints = driverOrders.map(order => ({
-                    location: { lat: parseFloat(order.latitude), lng: parseFloat(order.longitude) },
-                    stopover: true
-                }));
+                const request = buildOneWayRouteRequest(driverOrders);
+                if (!request) return;
 
                 const renderer = new google.maps.DirectionsRenderer({
                     map: map,
@@ -315,14 +340,6 @@ require_once 'header.php';
                         strokeWeight: 3
                     }
                 });
-
-                const request = {
-                    origin: factoryLocation,
-                    destination: factoryLocation,
-                    waypoints: waypoints,
-                    optimizeWaypoints: true,
-                    travelMode: google.maps.TravelMode.DRIVING
-                };
 
                 directionsService.route(request, (result, status) => {
                     if (status === 'OK') {
@@ -343,6 +360,9 @@ require_once 'header.php';
                 const driverOrders = todayOrdersByDriver[driverId];
                 if (!driverOrders || driverOrders.length === 0) return;
 
+                const request = buildOneWayRouteRequest(driverOrders);
+                if (!request) return;
+
                 const directionsService = new google.maps.DirectionsService();
                 const renderer = new google.maps.DirectionsRenderer({
                     map: map,
@@ -352,19 +372,6 @@ require_once 'header.php';
                         strokeWeight: 3
                     }
                 });
-
-                const waypoints = driverOrders.map(order => ({
-                    location: { lat: parseFloat(order.latitude), lng: parseFloat(order.longitude) },
-                    stopover: true
-                }));
-
-                const request = {
-                    origin: factoryLocation,
-                    destination: factoryLocation,
-                    waypoints: waypoints,
-                    optimizeWaypoints: true,
-                    travelMode: google.maps.TravelMode.DRIVING
-                };
 
                 directionsService.route(request, (result, status) => {
                     if (status === 'OK') {

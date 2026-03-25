@@ -266,6 +266,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $messageType = "danger";
                 }
             }
+        } elseif ($_POST['action'] === 'bulk_remove_driver_orders') {
+            $driver_id = $_POST['driver_id'] ?? 0;
+            $order_date = $selected_date;
+            if ($driver_id) {
+                try {
+                    $stmt = getDB()->prepare("DELETE FROM daily_orders WHERE order_date = ? AND driver_id = ?");
+                    $stmt->execute([$order_date, $driver_id]);
+                    $message = "تم حذف جميع طلبات هذا السائق لهذا اليوم";
+                    $messageType = "success";
+                } catch (PDOException $e) {
+                    $message = "خطأ في حذف الطلبات: " . $e->getMessage();
+                    $messageType = "danger";
+                }
+            }
+        } elseif ($_POST['action'] === 'bulk_remove_all_orders') {
+            $order_date = $selected_date;
+            try {
+                $stmt = getDB()->prepare("DELETE FROM daily_orders WHERE order_date = ?");
+                $stmt->execute([$order_date]);
+                $message = "تم حذف جميع الطلبات لهذا اليوم";
+                $messageType = "success";
+            } catch (PDOException $e) {
+                $message = "خطأ في حذف الطلبات: " . $e->getMessage();
+                $messageType = "danger";
+            }
+        } elseif ($_POST['action'] === 'bulk_unassign_all') {
+            $order_date = $selected_date;
+            try {
+                $stmt = getDB()->prepare("UPDATE daily_orders SET driver_id = NULL, status = 'pending' WHERE order_date = ? AND driver_id IS NOT NULL");
+                $stmt->execute([$order_date]);
+                $message = "تم إلغاء تعيين جميع السائقين، الطلبات أصبحت غير معينة";
+                $messageType = "success";
+            } catch (PDOException $e) {
+                $message = "خطأ في إلغاء التعيين: " . $e->getMessage();
+                $messageType = "danger";
+            }
         } elseif ($_POST['action'] === 'auto_assign') {
             $order_date = $selected_date;
             try {
@@ -764,6 +800,18 @@ require_once 'header.php';
                                             </span>
                                         <?php endif; ?>
                                     </h6>
+                                    <div class="d-flex justify-content-end mb-2">
+                                        <?php if ($driverId !== 'unassigned'): ?>
+                                            <form method="POST" class="d-inline">
+                                                <input type="hidden" name="action" value="bulk_remove_driver_orders">
+                                                <input type="hidden" name="order_date" value="<?php echo $selected_date; ?>">
+                                                <input type="hidden" name="driver_id" value="<?php echo $driverId; ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                    <i class="bi bi-trash"></i> حذف كل طلبات هذا السائق
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </div>
                                     <ul class="list-group">
                                         <?php foreach ($driverOrders as $order): ?>
                                             <li class="list-group-item">
@@ -790,7 +838,7 @@ require_once 'header.php';
                                                             </form>
                                                         <?php endif; ?>
                                                         <?php if ($order['driver_id']): ?>
-                                                            <form method="POST" class="d-inline" onsubmit="return confirm('هل تريد إلغاء تعيين السائق لهذا الطلب؟');">
+                                                            <form method="POST" class="d-inline unassign-order-form" data-customer-name="<?php echo htmlspecialchars($order['customer_name']); ?>">
                                                                 <input type="hidden" name="action" value="unassign_driver">
                                                                 <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
                                                                 <button type="submit" class="btn btn-sm btn-warning">
@@ -817,6 +865,27 @@ require_once 'header.php';
                                     <?php endif; ?>
                                 </div>
                             <?php endforeach; ?>
+                            <?php if (!empty($todayOrders)): ?>
+                                <div class="mt-3 pt-3 border-top d-flex flex-wrap gap-2">
+                                    <?php $hasAssigned = array_filter($todayOrders, fn($o) => !empty($o['driver_id'])); ?>
+                                    <?php if (!empty($hasAssigned)): ?>
+                                        <form method="POST" class="d-inline" id="bulkUnassignAllForm">
+                                            <input type="hidden" name="action" value="bulk_unassign_all">
+                                            <input type="hidden" name="order_date" value="<?php echo $selected_date; ?>">
+                                            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#bulkUnassignAllModal">
+                                                <i class="bi bi-x-circle"></i> إلغاء تعيين الكل (الطلبات تبقى)
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+                                    <form method="POST" class="d-inline" id="bulkRemoveAllForm">
+                                        <input type="hidden" name="action" value="bulk_remove_all_orders">
+                                        <input type="hidden" name="order_date" value="<?php echo $selected_date; ?>">
+                                        <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#bulkRemoveAllModal">
+                                            <i class="bi bi-trash"></i> حذف جميع الطلبات لهذا اليوم
+                                        </button>
+                                    </form>
+                                </div>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -896,6 +965,66 @@ require_once 'header.php';
     </style>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+    <div class="modal fade" id="unassignOrderModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">إلغاء تعيين السائق</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+                <div class="modal-body">
+                    هل تريد إلغاء تعيين السائق لهذا الطلب؟
+                    <div class="text-muted small mt-1" id="unassignOrderCustomerName"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-warning" id="confirmUnassignOrderBtn">إلغاء التعيين</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="bulkUnassignAllModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">إلغاء تعيين الكل</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+                <div class="modal-body">
+                    هل تريد إلغاء تعيين جميع السائقين؟ الطلبات ستبقى ولكن ستكون غير معينة.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-warning" id="confirmBulkUnassignAllBtn">
+                        <i class="bi bi-x-circle"></i> إلغاء التعيين
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="bulkRemoveAllModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">حذف جميع الطلبات</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+                <div class="modal-body">
+                    هل تريد حذف جميع الطلبات لهذا اليوم؟ لا يمكن التراجع عن هذا الإجراء.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-danger" id="confirmBulkRemoveAllBtn">
+                        <i class="bi bi-trash"></i> حذف الكل
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Enable searchable multi-select for customers
         $(document).ready(function() {
@@ -1074,11 +1203,36 @@ require_once 'header.php';
             }
         }
 
-        function renderDriverRoute(driverId, driverOrders, color) {
-            const waypoints = driverOrders.map(order => ({
-                location: { lat: parseFloat(order.latitude), lng: parseFloat(order.longitude) },
+        function buildOneWayRouteRequest(driverOrders) {
+            const all = driverOrders.map(o => ({
+                location: { lat: parseFloat(o.latitude), lng: parseFloat(o.longitude) },
+                order: o
+            }));
+            if (all.length === 0) return null;
+            let farthest = all[0];
+            let maxDistSq = 0;
+            all.forEach(p => {
+                const dlat = p.location.lat - factoryLocation.lat;
+                const dlng = p.location.lng - factoryLocation.lng;
+                const d = dlat * dlat + dlng * dlng;
+                if (d > maxDistSq) { maxDistSq = d; farthest = p; }
+            });
+            const waypoints = all.filter(p => p !== farthest).map(p => ({
+                location: p.location,
                 stopover: true
             }));
+            return {
+                origin: factoryLocation,
+                destination: farthest.location,
+                waypoints: waypoints,
+                optimizeWaypoints: true,
+                travelMode: google.maps.TravelMode.DRIVING
+            };
+        }
+
+        function renderDriverRoute(driverId, driverOrders, color) {
+            const request = buildOneWayRouteRequest(driverOrders);
+            if (!request) return;
 
             const directionsService = new google.maps.DirectionsService();
             const directionsRenderer = new google.maps.DirectionsRenderer({
@@ -1089,14 +1243,6 @@ require_once 'header.php';
                     strokeWeight: 3
                 }
             });
-
-            const request = {
-                origin: factoryLocation,
-                destination: factoryLocation,
-                waypoints: waypoints,
-                optimizeWaypoints: true,
-                travelMode: google.maps.TravelMode.DRIVING
-            };
 
             directionsService.route(request, (result, status) => {
                 if (status === 'OK') {
@@ -1180,6 +1326,53 @@ require_once 'header.php';
         }
 
         google.maps.event.addDomListener(window, 'load', initRouteMap);
+
+        (function() {
+            const modalEl = document.getElementById('unassignOrderModal');
+            const nameEl = document.getElementById('unassignOrderCustomerName');
+            const confirmBtn = document.getElementById('confirmUnassignOrderBtn');
+            let pendingForm = null;
+
+            document.querySelectorAll('.unassign-order-form').forEach(form => {
+                form.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    pendingForm = form;
+                    if (nameEl) {
+                        nameEl.textContent = form.getAttribute('data-customer-name') || '';
+                    }
+                    if (modalEl && typeof bootstrap !== 'undefined') {
+                        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                        modal.show();
+                    } else if (window.confirm('هل تريد إلغاء تعيين السائق لهذا الطلب؟')) {
+                        form.submit();
+                    }
+                });
+            });
+
+            if (confirmBtn) {
+                confirmBtn.addEventListener('click', function () {
+                    if (pendingForm) {
+                        pendingForm.submit();
+                    }
+                });
+            }
+
+            const bulkRemoveAllForm = document.getElementById('bulkRemoveAllForm');
+            const confirmBulkRemoveAllBtn = document.getElementById('confirmBulkRemoveAllBtn');
+            if (bulkRemoveAllForm && confirmBulkRemoveAllBtn) {
+                confirmBulkRemoveAllBtn.addEventListener('click', function () {
+                    bulkRemoveAllForm.submit();
+                });
+            }
+
+            const bulkUnassignAllForm = document.getElementById('bulkUnassignAllForm');
+            const confirmBulkUnassignAllBtn = document.getElementById('confirmBulkUnassignAllBtn');
+            if (bulkUnassignAllForm && confirmBulkUnassignAllBtn) {
+                confirmBulkUnassignAllBtn.addEventListener('click', function () {
+                    bulkUnassignAllForm.submit();
+                });
+            }
+        })();
     </script>
 <?php require_once 'footer.php'; ?>
 

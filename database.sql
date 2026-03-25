@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS drivers (
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(20),
     car_number VARCHAR(50),
+    car_type VARCHAR(100),
     color VARCHAR(20) DEFAULT '#e6194b',
     governorate VARCHAR(255),
     capacity INT DEFAULT 10 COMMENT 'Number of orders driver can handle per day',
