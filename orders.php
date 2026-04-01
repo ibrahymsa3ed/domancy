@@ -958,6 +958,7 @@ require_once 'header.php';
         }
         .cursor-pointer { cursor: pointer; }
     </style>
+    <script src="assets/js/routes.js"></script>
     <script>
         const allCustomers = <?php echo json_encode(array_map(function($c) use ($orderedCustomerIds) {
             return [
@@ -1201,6 +1202,7 @@ require_once 'header.php';
         });
         
         let routeMap;
+        /** @type {Object<string, google.maps.DirectionsRenderer[]>} */
         const routeRenderers = {};
         const orderMarkers = [];
         const orderInfoWindow = new google.maps.InfoWindow();
@@ -1245,7 +1247,8 @@ require_once 'header.php';
 
         function toggleRoute(driverId) {
             if (!ordersByDriver[driverId] || ordersByDriver[driverId].length === 0) return;
-            const isVisible = !!routeRenderers[driverId];
+            const r = routeRenderers[driverId];
+            const isVisible = Array.isArray(r) && r.length > 0;
             if (isVisible) {
                 hideDriverRoute(driverId);
                 setToggleState(driverId, false);
@@ -1255,52 +1258,16 @@ require_once 'header.php';
             }
         }
 
-        function buildOneWayRouteRequest(driverOrders) {
-            const all = driverOrders.map(o => ({
-                location: { lat: parseFloat(o.latitude), lng: parseFloat(o.longitude) },
-                order: o
-            }));
-            if (all.length === 0) return null;
-            let farthest = all[0];
-            let maxDistSq = 0;
-            all.forEach(p => {
-                const dlat = p.location.lat - factoryLocation.lat;
-                const dlng = p.location.lng - factoryLocation.lng;
-                const d = dlat * dlat + dlng * dlng;
-                if (d > maxDistSq) { maxDistSq = d; farthest = p; }
-            });
-            const waypoints = all.filter(p => p !== farthest).map(p => ({
-                location: p.location,
-                stopover: true
-            }));
-            return {
-                origin: factoryLocation,
-                destination: farthest.location,
-                waypoints: waypoints,
-                optimizeWaypoints: true,
-                travelMode: google.maps.TravelMode.DRIVING
-            };
-        }
-
         function renderDriverRoute(driverId, driverOrders, color) {
-            const request = buildOneWayRouteRequest(driverOrders);
-            if (!request) return;
-
             const directionsService = new google.maps.DirectionsService();
-            const directionsRenderer = new google.maps.DirectionsRenderer({
-                map: routeMap,
-                suppressMarkers: true,
-                polylineOptions: {
-                    strokeColor: color,
-                    strokeWeight: 3
-                }
-            });
-
-            directionsService.route(request, (result, status) => {
-                if (status === 'OK') {
-                    directionsRenderer.setDirections(result);
-                    routeRenderers[driverId] = directionsRenderer;
-                }
+            RovanaRoutes.renderDriverRoute(
+                directionsService,
+                routeMap,
+                factoryLocation,
+                driverOrders,
+                color
+            ).then(renderers => {
+                routeRenderers[driverId] = renderers;
             });
         }
 
@@ -1342,7 +1309,7 @@ require_once 'header.php';
 
         function hideDriverRoute(driverId) {
             if (routeRenderers[driverId]) {
-                routeRenderers[driverId].setMap(null);
+                RovanaRoutes.clearRenderers(routeRenderers[driverId]);
                 delete routeRenderers[driverId];
             }
         }

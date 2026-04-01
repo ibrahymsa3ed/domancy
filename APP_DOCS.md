@@ -1,6 +1,6 @@
 # Rovana (دومانسي) — Application Documentation
 
-> **Last updated:** 2026-02-09
+> **Last updated:** 2026-03-31
 >
 > This document describes the full architecture, features, and codebase of the Rovana distribution management system. Keep it updated with every change.
 
@@ -43,8 +43,10 @@ rovana/
 │   └── en.php             # English translations (unused)
 │
 ├── assets/
-│   └── css/
-│       └── style.css      # All custom styles (IBM Plex Sans Arabic, theming, RTL fixes)
+│   ├── css/
+│   │   └── style.css      # All custom styles (IBM Plex Sans Arabic, theming, RTL fixes)
+│   └── js/
+│       └── routes.js      # Shared per-driver Directions polylines (chunking + fixed stop order)
 │
 ├── .htaccess              # UTF-8, -Indexes
 ├── .gitignore             # Ignores config.php, IDE/OS files
@@ -160,9 +162,40 @@ Database: **`ice_cream_factory`** (MySQL 8, utf8mb4)
 - RTL fix for `.form-select` dropdown arrow positioning
 - Card header overrides scoped to `.card-header` only (not badges)
 
+### `assets/js/routes.js`
+- Loaded by [index.php](index.php) and [orders.php](orders.php) (after Google Maps API).
+- Exposes `window.RovanaRoutes`: `sortStopsByOrderId`, `buildOrderedLocations`, `buildRouteSegments`, `renderDriverRoute`, `clearRenderers`.
+- **Stop order:** Stops are sorted by `daily_orders.id` (ascending) so the drawn path matches a stable database order (not Google’s waypoint optimizer).
+- **Chunking:** Google Directions allows at most **23** intermediate waypoints per request. Routes with more stops are split into consecutive segments (factory → … → last stop of segment; next segment continues from that stop). Each segment gets its own `DirectionsRenderer`; all use the same driver color.
+- **`optimizeWaypoints`:** Always `false` so the sequence stays `id`-ordered.
+
 ---
 
-## 6. Page-by-Page Feature Reference
+## 6. Distribution routes (خط السير) — workflow and behavior
+
+### Operational checklist (Phase A)
+
+1. Set **factory** location on [factory.php](factory.php) (routes start here).
+2. Ensure **customers** have valid lat/lng ([customers.php](customers.php)).
+3. On [orders.php](orders.php): choose **date**, select customers, **save** to create/sync `daily_orders`.
+4. Select **drivers** (picker; optional `localStorage` per date).
+5. **Assign** manually per row or use **توزيع تلقائي** (requires saved customers + at least one selected driver).
+6. View polylines on the **orders** map (toggles per driver) or on **index.php** map for **today** only.
+
+Unassigned orders appear gray; missing factory or coordinates will break or skew routes.
+
+### Technical summary
+
+| Topic | Behavior |
+|--------|----------|
+| Grouping | PHP groups rows by `driver_id`; each group is one driver’s stops for the map. |
+| Order of stops | JavaScript sorts by `daily_orders.id` ascending before calling Directions. |
+| Long routes | [routes.js](assets/js/routes.js) splits into multiple API requests when a driver has more than 24 stops in a leg (23 waypoints + destination). |
+| Colors | Each driver’s polylines use `drivers.color` (fallback palette if missing). |
+
+---
+
+## 7. Page-by-Page Feature Reference
 
 ### `index.php` — الخريطة (Map Overview)
 **Purpose:** Main dashboard showing the factory, all customers, and today's delivery routes on a Google Map.
@@ -171,15 +204,15 @@ Database: **`ice_cream_factory`** (MySQL 8, utf8mb4)
 - Factory location
 - All customers
 - Active drivers
-- Today's `daily_orders` with driver assignments
+- Today's `daily_orders` with driver assignments (route query includes `o.id` for stop ordering)
 
 **Features:**
 - Google Map with factory marker, customer markers (color-coded by assigned driver)
 - Filter: show all customers vs. only today's orders
-- Per-driver route toggle (show/hide route polylines)
+- Per-driver route toggle (show/hide route polylines); each driver may have multiple polylines when chunked (see [routes.js](assets/js/routes.js))
 - POST `assign_driver` — quick assign a driver to an order from the map
 
-**Google Maps:** Uses Directions API for route polylines from factory through waypoints.
+**Google Maps:** Uses Directions API via `RovanaRoutes.renderDriverRoute` — fixed order by `daily_orders.id`, chunked past 23 waypoints.
 
 ---
 
@@ -247,7 +280,7 @@ Database: **`ice_cream_factory`** (MySQL 8, utf8mb4)
 - **Customer picker** — Table with search, pagination, select/remove buttons
 - **Driver picker** — Table with search, pagination, select/remove buttons
 - **`localStorage`** — Persists selected drivers per date key
-- **Route map** — Shows assigned routes per driver with color-coded polylines
+- **Route map** — Shows assigned routes per driver with color-coded polylines via [routes.js](assets/js/routes.js) (`daily_orders.id` order, chunked when needed)
 - Confirm modals for all destructive actions
 
 ---
@@ -297,9 +330,9 @@ Database: **`ice_cream_factory`** (MySQL 8, utf8mb4)
 
 ---
 
-## 7. JavaScript Patterns
+## 8. JavaScript Patterns
 
-- **No shared JS files** — All JavaScript is inline within each PHP page
+- **Shared route module** — [assets/js/routes.js](assets/js/routes.js) for per-driver Directions polylines on map pages; other behavior remains inline in PHP pages
 - **Client-side tables** — `customers.php` and parts of `orders.php` load all data into JS arrays and render tables client-side for instant search/sort/pagination
 - **`window.confirmSubmit(form, opts)`** — Global function from `footer.php` for delete confirmations via Bootstrap modal
 - **Google Maps integration** — Marker placement, geocoding, autocomplete, directions/polylines
@@ -308,7 +341,7 @@ Database: **`ice_cream_factory`** (MySQL 8, utf8mb4)
 
 ---
 
-## 8. External Dependencies (CDN)
+## 9. External Dependencies (CDN)
 
 | Library | Version | Used In |
 |---------|---------|---------|
@@ -322,7 +355,7 @@ Database: **`ice_cream_factory`** (MySQL 8, utf8mb4)
 
 ---
 
-## 9. Data Flow
+## 10. Data Flow
 
 ```
 config.php ──► db.php (PDO singleton) ──► All pages
@@ -348,7 +381,7 @@ header.php ◄──── $pageTitle, $googleMapsScript
 
 ---
 
-## 10. Key Design Decisions
+## 11. Key Design Decisions
 
 - **No framework** — Plain PHP for simplicity and direct control
 - **Server-rendered with client-side enhancements** — Forms POST to same page; JS handles search/sort/pagination for speed
@@ -360,7 +393,7 @@ header.php ◄──── $pageTitle, $googleMapsScript
 
 ---
 
-## 11. Common Patterns for New Developers
+## 12. Common Patterns for New Developers
 
 ### Adding a new page:
 ```php
@@ -405,10 +438,11 @@ $stmt->execute([$value]);
 
 ---
 
-## 12. Change Log
+## 13. Change Log
 
 | Date | Description |
 |------|-------------|
+| 2026-03-31 | Per-driver routes: shared [assets/js/routes.js](assets/js/routes.js) — stop order by `daily_orders.id`, waypoint chunking (max 23 per request), `optimizeWaypoints: false`; [index.php](index.php) route query includes `o.id`; APP_DOCS section 6 (distribution workflow) |
 | 2026-02-09 | Added driver edit functionality (modal with all fields) |
 | 2026-02-09 | Added top pagination bar to customers table |
 | 2026-02-09 | Fixed driver status badge colors (scoped CSS overrides to card headers only) |

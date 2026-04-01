@@ -62,7 +62,7 @@ try {
 
     // Get today's orders with driver routes + customer mapping
     $routesStmt = getDB()->prepare("
-        SELECT o.customer_id, o.driver_id, c.name, c.address, c.latitude, c.longitude, c.phone, d.name AS driver_name, d.color AS driver_color
+        SELECT o.id, o.customer_id, o.driver_id, c.name, c.address, c.latitude, c.longitude, c.phone, d.name AS driver_name, d.color AS driver_color
         FROM daily_orders o
         JOIN customers c ON o.customer_id = c.id
         LEFT JOIN drivers d ON o.driver_id = d.id
@@ -203,6 +203,7 @@ require_once 'header.php';
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/js/routes.js"></script>
     <script>
         // Initialize map
         const factoryLocation = { lat: <?php echo $factoryLat; ?>, lng: <?php echo $factoryLng; ?> };
@@ -295,90 +296,49 @@ require_once 'header.php';
             });
         });
 
-        function buildOneWayRouteRequest(driverOrders) {
-            const all = driverOrders.map(o => ({
-                location: { lat: parseFloat(o.latitude), lng: parseFloat(o.longitude) },
-                order: o
-            }));
-            if (all.length === 0) return null;
-            let farthest = all[0];
-            let maxDistSq = 0;
-            all.forEach(p => {
-                const dlat = p.location.lat - factoryLocation.lat;
-                const dlng = p.location.lng - factoryLocation.lng;
-                const d = dlat * dlat + dlng * dlng;
-                if (d > maxDistSq) { maxDistSq = d; farthest = p; }
-            });
-            const waypoints = all.filter(p => p !== farthest).map(p => ({
-                location: p.location,
-                stopover: true
-            }));
-            return {
-                origin: factoryLocation,
-                destination: farthest.location,
-                waypoints: waypoints,
-                optimizeWaypoints: true,
-                travelMode: google.maps.TravelMode.DRIVING
-            };
-        }
-
+        /** @type {Object<string, google.maps.DirectionsRenderer[]>} One or more polylines per driver when chunked */
         const dailyRouteRenderers = {};
+
         function renderDailyRoutes() {
             const directionsService = new google.maps.DirectionsService();
-            Object.keys(todayOrdersByDriver).forEach(driverId => {
+            const tasks = Object.keys(todayOrdersByDriver).map(driverId => {
                 const driverOrders = todayOrdersByDriver[driverId];
-                if (!driverOrders || driverOrders.length === 0) return;
-
-                const request = buildOneWayRouteRequest(driverOrders);
-                if (!request) return;
-
-                const renderer = new google.maps.DirectionsRenderer({
-                    map: map,
-                    suppressMarkers: true,
-                    polylineOptions: {
-                        strokeColor: getDriverColor(driverId),
-                        strokeWeight: 3
-                    }
-                });
-
-                directionsService.route(request, (result, status) => {
-                    if (status === 'OK') {
-                        renderer.setDirections(result);
-                        dailyRouteRenderers[driverId] = renderer;
-                    }
+                if (!driverOrders || driverOrders.length === 0) {
+                    return Promise.resolve();
+                }
+                return RovanaRoutes.renderDriverRoute(
+                    directionsService,
+                    map,
+                    factoryLocation,
+                    driverOrders,
+                    getDriverColor(driverId)
+                ).then(renderers => {
+                    dailyRouteRenderers[driverId] = renderers;
                 });
             });
+            Promise.all(tasks);
         }
 
         function toggleMainRoute(driverId) {
-            const isVisible = !!dailyRouteRenderers[driverId];
+            const isVisible = !!dailyRouteRenderers[driverId] && dailyRouteRenderers[driverId].length > 0;
             if (isVisible) {
-                dailyRouteRenderers[driverId].setMap(null);
+                RovanaRoutes.clearRenderers(dailyRouteRenderers[driverId]);
                 delete dailyRouteRenderers[driverId];
                 updateRouteToggleButton(driverId, false);
             } else {
                 const driverOrders = todayOrdersByDriver[driverId];
                 if (!driverOrders || driverOrders.length === 0) return;
 
-                const request = buildOneWayRouteRequest(driverOrders);
-                if (!request) return;
-
                 const directionsService = new google.maps.DirectionsService();
-                const renderer = new google.maps.DirectionsRenderer({
-                    map: map,
-                    suppressMarkers: true,
-                    polylineOptions: {
-                        strokeColor: getDriverColor(driverId),
-                        strokeWeight: 3
-                    }
-                });
-
-                directionsService.route(request, (result, status) => {
-                    if (status === 'OK') {
-                        renderer.setDirections(result);
-                        dailyRouteRenderers[driverId] = renderer;
-                        updateRouteToggleButton(driverId, true);
-                    }
+                RovanaRoutes.renderDriverRoute(
+                    directionsService,
+                    map,
+                    factoryLocation,
+                    driverOrders,
+                    getDriverColor(driverId)
+                ).then(renderers => {
+                    dailyRouteRenderers[driverId] = renderers;
+                    updateRouteToggleButton(driverId, renderers.length > 0);
                 });
             }
         }
