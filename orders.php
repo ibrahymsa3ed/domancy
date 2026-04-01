@@ -150,6 +150,32 @@ function nearestNeighborOrder($orders, $startLat, $startLng) {
     return $ordered;
 }
 
+/**
+ * Single geographic cluster for auto-assign: prefer governorate, then town, then parsed address.
+ * Avoids splitting one city (e.g. Alexandria) across drivers when customers share governorate/town.
+ */
+function clusterKeyForOrder(array $order): string {
+    $gov = trim((string) ($order['governorate'] ?? ''));
+    if ($gov !== '') {
+        $n = normalizeLocationName($gov);
+        if ($n !== '') {
+            return $n;
+        }
+    }
+    $town = trim((string) ($order['town'] ?? ''));
+    if ($town !== '') {
+        $n = normalizeLocationName($town);
+        if ($n !== '') {
+            return $n;
+        }
+    }
+    $fromAddr = extractGovernorate($order['address'] ?? '', null);
+    if ($fromAddr !== '' && $fromAddr !== 'unknown') {
+        return $fromAddr;
+    }
+    return extractTown($order['address'] ?? '', $order['town'] ?? null);
+}
+
 function extractGovernorate($address, $governorate = null) {
     if (!empty($governorate)) {
         return normalizeLocationName($governorate);
@@ -398,7 +424,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         $assignedCountByDriver[$driverId] += 1;
 
-                        $town = extractTown($order['address'] ?? '', $order['town'] ?? null);
+                        $town = clusterKeyForOrder($order);
                         if (!isset($driverTowns[$driverId])) {
                             $driverTowns[$driverId] = [];
                         }
@@ -439,8 +465,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ];
                     }
 
+                    $driverCapById = [];
+                    foreach ($drivers as $d) {
+                        $driverCapById[(int) $d['id']] = max(1, (int) $d['capacity']);
+                    }
+
                     foreach ($unassignedOrders as $order) {
-                        $town = extractTown($order['address'] ?? '', $order['town'] ?? null);
+                        $town = clusterKeyForOrder($order);
                         $order['town_norm'] = $town;
                         $townClusters[$town][] = $order;
                     }
@@ -505,8 +536,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $routePoints = $driverRoutePoints[$driverId] ?? [];
                             $routeDistance = minRouteDistanceKm($routePoints, $centroid['lat'], $centroid['lng']);
                             $distanceScore = $routeDistance !== null ? $routeDistance : 0;
-                            $fairnessPenalty = ($driverAssignedRun[$driverId] ?? 0) * 0.5;
-                            $townBonus = $ownsTown ? -5 : 0;
+                            $cap = $driverCapById[$driverId] ?? 10;
+                            $alreadyAssigned = $assignedCountByDriver[$driverId] ?? 0;
+                            $loadRatio = $alreadyAssigned / $cap;
+                            $fairnessPenalty = 110.0 * $loadRatio + 22.0 * (float) ($driverAssignedRun[$driverId] ?? 0);
+                            $townBonus = $ownsTown ? -6 : 0;
                             $score = $distanceScore + $fairnessPenalty + $townBonus;
 
                             if ($bestScore === null || $score < $bestScore) {
@@ -554,8 +588,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             $centroid['lng']
                                         );
                                     }
-                                    if ($fallbackScore === null || $distanceScore < $fallbackScore) {
-                                        $fallbackScore = $distanceScore;
+                                    $cap = $driverCapById[$driverId] ?? 10;
+                                    $alreadyAssigned = $assignedCountByDriver[$driverId] ?? 0;
+                                    $loadRatio = $alreadyAssigned / $cap;
+                                    $fairnessPenalty = 110.0 * $loadRatio + 22.0 * (float) ($driverAssignedRun[$driverId] ?? 0);
+                                    $score = $distanceScore + $fairnessPenalty;
+                                    if ($fallbackScore === null || $score < $fallbackScore) {
+                                        $fallbackScore = $score;
                                         $fallbackDriver = $driverId;
                                     }
                                 }

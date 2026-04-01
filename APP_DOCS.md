@@ -268,13 +268,13 @@ Unassigned orders appear gray; missing factory or coordinates will break or skew
 - `remove_order` — Delete a single order
 - `bulk_remove_driver_orders` — Remove all orders for a specific driver
 - `bulk_remove_all_orders` — Remove all orders for the date
-- `auto_assign` — Algorithm: clusters by town, respects driver capacity, nearest-neighbor ordering
+- `auto_assign` — Algorithm: geographic clusters + load-balanced driver choice + capacity + nearest-neighbor within cluster
 
 **Auto-assign algorithm:**
-1. Groups pending orders by customer `town`
-2. Assigns drivers (optionally filtered subset) based on capacity
-3. Within each town cluster, orders nearest-neighbor sorted from factory
-4. Uses `drivingDistanceKm()` which calls Google Directions API (falls back to haversine)
+1. **Clusters** orders with `clusterKeyForOrder()`: DB `governorate` (if set), else `town`, else parsed governorate from address (`extractGovernorate`), else parsed town from address — so one city (e.g. Alexandria) is not split across drivers when data is consistent.
+2. **Town-to-driver** choice uses distance to cluster centroid **plus** a strong penalty for drivers who already have many assignments (`loadRatio = existing_assigned / capacity`) and for drivers already given other clusters in this run — reduces one driver taking every nearby town.
+3. Within each cluster, orders are **nearest-neighbor** ordered from the driver’s current position.
+4. `drivingDistanceKm()` may call Google Directions API (falls back to haversine)
 
 **Client-side features:**
 - **Customer picker** — Table with search, pagination, select/remove buttons
@@ -442,6 +442,7 @@ $stmt->execute([$value]);
 
 | Date | Description |
 |------|-------------|
+| 2026-03-31 | Auto-assign fairness: [orders.php](orders.php) `clusterKeyForOrder()` (governorate → town → address), stronger load-based score; fallback driver uses same score |
 | 2026-03-31 | Per-driver routes: shared [assets/js/routes.js](assets/js/routes.js) — stop order by `daily_orders.id`, waypoint chunking (max 23 per request), `optimizeWaypoints: false`; [index.php](index.php) route query includes `o.id`; APP_DOCS section 6 (distribution workflow) |
 | 2026-02-09 | Added driver edit functionality (modal with all fields) |
 | 2026-02-09 | Added top pagination bar to customers table |
