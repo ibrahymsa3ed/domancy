@@ -163,6 +163,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = "خطأ في إضافة العملاء التجريبيين: " . $e->getMessage();
                 $messageType = "danger";
             }
+        } elseif ($_POST['action'] === 'reset_and_seed_customers') {
+            try {
+                getDB()->exec('DELETE FROM customers');
+                $factory = getDB()->query("SELECT latitude, longitude FROM factory LIMIT 1")->fetch();
+                $baseLat = $factory ? (float) $factory['latitude'] : 30.0444;
+                $baseLng = $factory ? (float) $factory['longitude'] : 31.2357;
+                $towns = ['مدينة نصر', 'المعادي', 'شبرا', 'حلوان', 'الزمالك', 'مصر الجديدة', 'العباسية', 'طره', 'المنيل', 'السيدة زينب'];
+                $govs = ['القاهرة', 'القاهرة', 'القاهرة', 'القاهرة', 'الجيزة', 'القاهرة', 'القاهرة', 'الجيزة', 'القاهرة', 'القاهرة'];
+                $stmt = getDB()->prepare("INSERT INTO customers (customer_number, name, phone, address, town, governorate, latitude, longitude, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $n = 40;
+                for ($i = 1; $i <= $n; $i++) {
+                    $name = 'عميل تجريبي ' . $i;
+                    $phone = '01' . random_int(100000000, 999999999);
+                    $town = $towns[array_rand($towns)];
+                    $gov = $govs[array_rand($govs)];
+                    $address = 'شارع ' . random_int(1, 200) . '، ' . $town . '، محافظة ' . $gov;
+                    $lat = $baseLat + (random_int(-130, 130) / 1000);
+                    $lng = $baseLng + (random_int(-130, 130) / 1000);
+                    $stmt->execute([(string) $i, $name, $phone, $address, $town, $gov, $lat, $lng, '']);
+                }
+                $message = "تم حذف جميع العملاء وإضافة {$n} عميلاً تجريبياً عشوائياً قرب المصنع";
+                $messageType = "success";
+            } catch (Throwable $e) {
+                $message = "خطأ: " . $e->getMessage();
+                $messageType = "danger";
+            }
         }
     }
 }
@@ -243,10 +269,16 @@ require_once 'header.php';
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0"><i class="bi bi-list-ul"></i> العملاء (<?php echo $totalCustomers; ?>)</h5>
-                        <form method="POST" class="d-inline">
-                            <input type="hidden" name="action" value="seed_customers">
-                            <button type="submit" class="btn btn-sm btn-outline-secondary">+ 10 تجريبي</button>
-                        </form>
+                        <div class="d-flex flex-wrap gap-1 justify-content-end">
+                            <form method="POST" class="d-inline">
+                                <input type="hidden" name="action" value="seed_customers">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">+ 10 تجريبي</button>
+                            </form>
+                            <form method="POST" class="d-inline reset-seed-form">
+                                <input type="hidden" name="action" value="reset_and_seed_customers">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">مسح الكل + 40 تجريبي</button>
+                            </form>
+                        </div>
                     </div>
                     <div class="card-body p-0">
                         <div class="p-2 d-flex gap-2 align-items-center">
@@ -639,6 +671,18 @@ require_once 'header.php';
             perPage = parseInt(this.value);
             currentPage = 1;
             renderCustomerTable();
+        });
+
+        document.querySelectorAll('.reset-seed-form').forEach(form => {
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                confirmSubmit(form, {
+                    title: 'مسح جميع العملاء',
+                    message: 'سيتم حذف كل العملاء وجميع الطلبات اليومية المرتبطة بهم، ثم إضافة 40 عميلاً تجريبياً عشوائياً قرب المصنع. هل أنت متأكد؟',
+                    btnText: 'نعم، نفّذ',
+                    btnClass: 'btn-danger'
+                });
+            });
         });
 
         renderCustomerTable();
